@@ -1,0 +1,111 @@
+rules:
+  # Bronze (mandatory)
+  action-setup:
+    status: exempt
+    comment: Integration does not register custom service actions.
+  appropriate-polling:
+    status: done
+    comment: >-
+      Fixed 300 s (not user-tunable). The API allows 30 requests per node
+      per clock hour (characterized empirically; see docs/architecture.md),
+      and the budget is shared globally across all consumers of a node, so
+      12/hour deliberately leaves 60% headroom.
+  brands:
+    status: done
+    comment: >-
+      Brand assets ship in-tree at custom_components/airvisual_outdoor/brand/
+      (icon, logo, logo@2x — IQAir brand art from the official HA brands CDN),
+      served by the HA 2026.3+ local brands proxy. home-assistant/brands no
+      longer accepts custom-integration PRs, so the in-tree folder is the
+      canonical mechanism and satisfies this rule.
+  common-modules: done
+  config-flow: done
+  config-flow-test-coverage: done
+  dependency-transparency: done
+  docs-actions:
+    status: exempt
+    comment: No service actions to document.
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-event-setup:
+    status: exempt
+    comment: No event subscriptions; all data flow is via DataUpdateCoordinator.
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done
+  unique-config-entry: done
+
+  # Silver
+  action-exceptions:
+    status: exempt
+    comment: No custom actions.
+  config-entry-unloading: done
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
+  entity-unavailable:
+    status: done
+    comment: >-
+      Coordinator failure marks entities unavailable, plus an entity-level
+      staleness guard on the payload's own sample timestamp (the cloud keeps
+      serving a dead station's last reading with HTTP 200 indefinitely).
+  integration-owner: done
+  log-when-unavailable:
+    status: done
+    comment: DataUpdateCoordinator logs once on failure and once on recovery.
+  parallel-updates: done
+  reauthentication-flow:
+    status: exempt
+    comment: The node API is keyless; there are no credentials to refresh.
+  test-coverage:
+    status: done
+    comment: 100% line coverage, enforced by the CI gate.
+
+  # Gold
+  devices: done
+  diagnostics: done
+  discovery:
+    status: exempt
+    comment: >-
+      The device exposes no local network surface (zero open ports) and the
+      node id is not derivable from the network, so there is nothing to
+      discover from.
+  discovery-update-info:
+    status: exempt
+    comment: No discovery (see discovery).
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices:
+    status: exempt
+    comment: One config entry maps to exactly one physical monitor.
+  entity-category:
+    status: done
+    comment: All entities are primary sensor readings; none are diagnostic.
+  entity-device-class: done
+  entity-disabled-by-default:
+    status: exempt
+    comment: >-
+      The launch set is deliberately minimal (per-pollutant AQIs and trend
+      sensors were cut at design time); nothing niche ships to disable.
+  entity-translations: done
+  exception-translations: done
+  icon-translations: done
+  reconfiguration-flow: done
+  repair-issues:
+    status: exempt
+    comment: No repairable failure modes; errors are transient API states.
+  stale-devices:
+    status: exempt
+    comment: One entry = one device; removal is entry removal.
+
+  # Platinum
+  async-dependency: done
+  inject-websession: done
+  strict-typing: done

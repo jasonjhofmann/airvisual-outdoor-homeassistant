@@ -1,0 +1,52 @@
+# Tool configuration only — the integration itself is loaded by Home
+# Assistant from custom_components/airvisual_outdoor/, not pip-installed.
+# There is intentionally no [project] section here.
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+extend-exclude = ["tests/fixtures"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line-too-long — defer to ruff format
+    "SIM108", # ternary-instead-of-if — clarity sometimes beats brevity
+    "RUF001", # ambiguous-unicode-character-string — em/en dashes in prose
+    "RUF002", # ambiguous-unicode-character-docstring
+    "RUF003", # ambiguous-unicode-character-comment
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]  # pytest uses assert intentionally
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+# Modern HA's stubs aren't published; rely on its installed source. The
+# overrides below suppress missing-imports for runtime-only packages.
+
+[[tool.mypy.overrides]]
+module = [
+    "homeassistant.*",
+    "voluptuous",
+    "pytest",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
+asyncio_mode = "auto"

@@ -1,0 +1,97 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add an AirVisual Outdoor",
+        "description": "Polls IQAir's public node API for your own AirVisual Outdoor unit. No account or API key needed — the unit must be published as a station.",
+        "data": {
+          "node_id": "Node ID",
+          "name": "Name",
+          "aqi_scale": "AQI scale",
+          "mac": "MAC address (optional)"
+        },
+        "data_description": {
+          "node_id": "The unit's 24-character hex ID, e.g. from your IQAir dashboard URL.",
+          "name": "Defaults to the name the unit reports (usually \"AirVisual Outdoor\").",
+          "aqi_scale": "Which AQI standard the AQI and main-pollutant sensors report. One scale per entry — reconfigure later to switch.",
+          "mac": "If set, Home Assistant merges this device with its network (DHCP/UniFi) client entry."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure AirVisual Outdoor",
+        "description": "Node {node_id}. The node ID itself cannot change — a different unit is a new entry.",
+        "data": {
+          "aqi_scale": "AQI scale",
+          "mac": "MAC address (optional)"
+        },
+        "data_description": {
+          "aqi_scale": "Switching scale creates fresh AQI and main-pollutant entities under the new scale.",
+          "mac": "If set, Home Assistant merges this device with its network (DHCP/UniFi) client entry."
+        }
+      }
+    },
+    "error": {
+      "invalid_node_id": "Node IDs are exactly 24 hex characters (0-9, a-f).",
+      "invalid_mac": "That doesn't look like a MAC address (AA:BB:CC:DD:EE:FF).",
+      "device_not_found": "IQAir's API has no device with this node ID.",
+      "cannot_connect": "Could not reach IQAir's node API. Check connectivity and try again."
+    },
+    "abort": {
+      "already_configured": "This node is already configured.",
+      "reconfigure_successful": "Reconfiguration successful."
+    }
+  },
+  "selector": {
+    "aqi_scale": {
+      "options": {
+        "us": "US (EPA)",
+        "cn": "China (MEE)"
+      }
+    }
+  },
+  "exceptions": {
+    "update_failed": {
+      "message": "Error talking to the IQAir node API: {error}"
+    },
+    "rate_limited": {
+      "message": "The node's hourly request budget is exhausted; it resets at the top of the hour."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "aqi_us": {
+        "name": "AQI (US)"
+      },
+      "aqi_cn": {
+        "name": "AQI (CN)"
+      },
+      "pm25": {
+        "name": "PM2.5"
+      },
+      "pm10": {
+        "name": "PM10"
+      },
+      "pm1": {
+        "name": "PM1"
+      },
+      "co2": {
+        "name": "CO2"
+      },
+      "temperature": {
+        "name": "Temperature"
+      },
+      "humidity": {
+        "name": "Humidity"
+      },
+      "pressure": {
+        "name": "Pressure"
+      },
+      "main_pollutant": {
+        "name": "Main pollutant"
+      },
+      "last_updated": {
+        "name": "Last updated"
+      }
+    }
+  }
+}
