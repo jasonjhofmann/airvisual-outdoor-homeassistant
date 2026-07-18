@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow [SemVer](https://semver.org/) with a `v` prefix on tags.
 
+## [Unreleased]
+
+### Added
+- `tests/test_init.py`: pins the backfill background task's crash
+  containment — a failing `async_backfill_statistics` must be logged, not
+  fail entry setup. Restores the 100% coverage the CI gate requires (the
+  two `except`/log lines in `__init__.py` were the only uncovered
+  statements, failing every PR at 99% since 2026-06-25).
+
 ## [0.1.0] - 2026-06-10
 
 ### Added
