@@ -36,7 +36,7 @@ Top level: `name` (str, device display name, e.g. "AirVisual Outdoor"),
 
 | key | type | notes |
 |---|---|---|
-| `pm25`, `pm10`, `pm1` | obj | each `{conc: µg/m³, aqius: int, aqicn: int}` |
+| `pm25`, `pm10`, `pm1` | obj | each `{conc: μg/m³, aqius: int, aqicn: int}` |
 | `co2` | int (ppm) | **flat number, NOT `{conc:}`** — only present when a CO₂ module is installed |
 | `tp` | float (°C) | temperature |
 | `hm` | int (%) | relative humidity |

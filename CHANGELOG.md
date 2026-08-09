@@ -6,6 +6,12 @@ follow [SemVer](https://semver.org/) with a `v` prefix on tags.
 
 ## [Unreleased]
 
+### Changed
+- `docs/architecture.md`: the payload table spelled `µg/m³` with U+00B5 MICRO
+  SIGN; Home Assistant's canonical value (`UnitOfDensity.MICROGRAMS_PER_CUBIC_METER`)
+  is U+03BC GREEK SMALL LETTER MU. Docs-only — `sensor.py` and `statistics.py`
+  take the unit from HA's constant, never a literal.
+
 ### Added
 - `tests/test_init.py`: pins the backfill background task's crash
   containment — a failing `async_backfill_statistics` must be logged, not
