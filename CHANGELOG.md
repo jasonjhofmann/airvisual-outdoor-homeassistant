@@ -6,6 +6,8 @@ follow [SemVer](https://semver.org/) with a `v` prefix on tags.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-09
+
 ### Changed
 - `docs/architecture.md`: the payload table spelled `µg/m³` with U+00B5 MICRO
   SIGN; Home Assistant's canonical value (`UnitOfDensity.MICROGRAMS_PER_CUBIC_METER`)
