@@ -6,7 +6,7 @@ follow [SemVer](https://semver.org/) with a `v` prefix on tags.
 
 ## [Unreleased]
 
-## [0.1.1] - 2026-08-09
+## [0.2.0] - 2026-08-09
 
 ### Changed
 
@@ -15,11 +15,7 @@ follow [SemVer](https://semver.org/) with a `v` prefix on tags.
   core release shipping the `UnitOfDensity` / `UnitOfRatio` unit enums
   (they are absent at 2026.6.0), and that core's own `requires-python` is
   `>=3.14.2`. `hacs.json` now declares the new floor, so HACS will not
-  offer this version to older cores; they stay on 0.1.0.
-- `docs/architecture.md`: the payload table spelled `µg/m³` with U+00B5 MICRO
-  SIGN; Home Assistant's canonical value (`UnitOfDensity.MICROGRAMS_PER_CUBIC_METER`)
-  is U+03BC GREEK SMALL LETTER MU. Docs-only — `sensor.py` and `statistics.py`
-  take the unit from HA's constant, never a literal.
+  offer this version to older cores; they stay on 0.1.1.
 - Migrated off the deprecated `CONCENTRATION_*` unit constants onto the
   `UnitOfDensity` / `UnitOfRatio` StrEnums in `sensor.py` and
   `statistics.py` — `CONCENTRATION_MICROGRAMS_PER_CUBIC_METER` →
@@ -38,6 +34,15 @@ follow [SemVer](https://semver.org/) with a `v` prefix on tags.
   `py314` — it must equal the *oldest* supported Python) and mypy's
   `python_version`. A job left on 3.13 would resolve a pre-2026.7 core and
   fail at import on the missing unit enums.
+
+## [0.1.1] - 2026-08-09
+
+### Changed
+
+- `docs/architecture.md`: the payload table spelled `µg/m³` with U+00B5 MICRO
+  SIGN; Home Assistant's canonical value (`UnitOfDensity.MICROGRAMS_PER_CUBIC_METER`)
+  is U+03BC GREEK SMALL LETTER MU. Docs-only — `sensor.py` and `statistics.py`
+  take the unit from HA's constant, never a literal.
 
 ### Added
 
