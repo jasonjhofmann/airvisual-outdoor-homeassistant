@@ -28,10 +28,10 @@ from homeassistant.components.recorder.statistics import (
     statistics_during_period,
 )
 from homeassistant.const import (
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
-    CONCENTRATION_PARTS_PER_MILLION,
     PERCENTAGE,
+    UnitOfDensity,
     UnitOfPressure,
+    UnitOfRatio,
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
@@ -49,10 +49,10 @@ _LOGGER = logging.getLogger(__name__)
 BACKFILL_SOURCES: dict[
     str, tuple[Callable[[HourlyReading], float | int | None], str]
 ] = {
-    "pm25": (lambda h: h.pm25_conc, CONCENTRATION_MICROGRAMS_PER_CUBIC_METER),
-    "pm10": (lambda h: h.pm10_conc, CONCENTRATION_MICROGRAMS_PER_CUBIC_METER),
-    "pm1": (lambda h: h.pm1_conc, CONCENTRATION_MICROGRAMS_PER_CUBIC_METER),
-    "co2": (lambda h: h.co2, CONCENTRATION_PARTS_PER_MILLION),
+    "pm25": (lambda h: h.pm25_conc, UnitOfDensity.MICROGRAMS_PER_CUBIC_METER),
+    "pm10": (lambda h: h.pm10_conc, UnitOfDensity.MICROGRAMS_PER_CUBIC_METER),
+    "pm1": (lambda h: h.pm1_conc, UnitOfDensity.MICROGRAMS_PER_CUBIC_METER),
+    "co2": (lambda h: h.co2, UnitOfRatio.PARTS_PER_MILLION),
     "temperature": (lambda h: h.temperature, UnitOfTemperature.CELSIUS),
     "humidity": (lambda h: h.humidity, PERCENTAGE),
     "pressure": (lambda h: h.pressure, UnitOfPressure.PA),
@@ -62,8 +62,11 @@ BACKFILL_SOURCES: dict[
 def _metadata(entity_id: str, unit: str) -> StatisticMetaData:
     """Statistics metadata for an entity-owned (source=recorder) import.
 
-    HA 2025.4 replaced ``has_mean`` with ``mean_type``; support both so the
-    integration spans the deprecation window.
+    HA 2025.4 replaced ``has_mean`` with ``mean_type``. With the minimum
+    supported core now 2026.7.0, ``StatisticMeanType`` is always importable,
+    so the ``has_mean`` fallback below is vestigial — retained as a
+    defensive no-op rather than removed as part of the unit-constant
+    migration.
     """
     meta: dict[str, object] = {
         "source": "recorder",

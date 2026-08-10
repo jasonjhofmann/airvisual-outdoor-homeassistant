@@ -1,10 +1,19 @@
 # Tool configuration only — the integration itself is loaded by Home
 # Assistant from custom_components/airvisual_outdoor/, not pip-installed.
-# There is intentionally no [project] section here.
+# There is intentionally no [project] section here — and therefore no
+# `requires-python`, which lives under [project]. Adding one would make uv
+# treat this directory as an installable project and try to build it.
+#
+# The Python floor is 3.14, derived from the Home Assistant floor declared
+# in hacs.json (2026.7.0, the first core release shipping UnitOfDensity /
+# UnitOfRatio; its own pyproject requires-python is >=3.14.2). Every tool
+# pin below and every `--python` in .github/workflows/ and CONTRIBUTING.md
+# must track that floor.
 
 [tool.ruff]
 line-length = 88
-target-version = "py313"
+# Must equal the OLDEST supported Python, not the newest.
+target-version = "py314"
 extend-exclude = ["tests/fixtures"]
 
 [tool.ruff.lint]
@@ -31,7 +40,7 @@ ignore = [
 "tests/*" = ["B011"]  # pytest uses assert intentionally
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 strict = true
 warn_unreachable = true
 # Modern HA's stubs aren't published; rely on its installed source. The

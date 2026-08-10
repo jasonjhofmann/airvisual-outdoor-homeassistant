@@ -16,17 +16,17 @@ jobs:
 
       - name: Ruff (lint)
         run: |
-          uv run --python 3.13 --with ruff \
+          uv run --python 3.14 --with ruff \
             ruff check custom_components/ tests/
 
       - name: Ruff (format check)
         run: |
-          uv run --python 3.13 --with ruff \
+          uv run --python 3.14 --with ruff \
             ruff format --check custom_components/ tests/
 
       - name: Mypy (strict)
         run: |
-          uv run --python 3.13 \
+          uv run --python 3.14 \
             --with mypy \
             --with homeassistant \
             --with aiohttp \
@@ -35,7 +35,7 @@ jobs:
 
       - name: Pytest (with coverage gate)
         run: |
-          uv run --python 3.13 \
+          uv run --python 3.14 \
             --with pytest-homeassistant-custom-component \
             --with pytest-cov \
             python -m pytest tests/ -v \

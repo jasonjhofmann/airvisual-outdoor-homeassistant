@@ -13,15 +13,15 @@ Everything runs through [uv](https://docs.astral.sh/uv/) — no venv to manage:
 
 ```bash
 # Lint + format
-uv run --python 3.13 --with ruff ruff check custom_components/ tests/
-uv run --python 3.13 --with ruff ruff format custom_components/ tests/
+uv run --python 3.14 --with ruff ruff check custom_components/ tests/
+uv run --python 3.14 --with ruff ruff format custom_components/ tests/
 
 # Strict typing
-uv run --python 3.13 --with mypy --with homeassistant --with aiohttp \
+uv run --python 3.14 --with mypy --with homeassistant --with aiohttp \
   --with voluptuous mypy custom_components/airvisual_outdoor/
 
 # Tests (with coverage)
-uv run --python 3.13 --with pytest-homeassistant-custom-component \
+uv run --python 3.14 --with pytest-homeassistant-custom-component \
   --with pytest-cov python -m pytest tests/ -v \
   --cov=custom_components.airvisual_outdoor --cov-report=term-missing
 ```
