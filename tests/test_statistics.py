@@ -188,7 +188,7 @@ async def test_backfill_all_hours_existing_imports_nothing(
 
 
 def test_metadata_falls_back_to_has_mean_without_meantype() -> None:
-    """Pre-2025.4 cores without StatisticMeanType get has_mean=True."""
+    """A recorder module without StatisticMeanType falls back to has_mean=True."""
     import sys
     from types import ModuleType
 
