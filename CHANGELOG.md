@@ -6,15 +6,46 @@ follow [SemVer](https://semver.org/) with a `v` prefix on tags.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-09
+
+### Changed
+
+- **BREAKING (user-facing): the minimum Home Assistant version rises from
+  2025.1.0 to 2026.7.0**, and with it Python 3.14 — 2026.7.0 is the first
+  core release shipping the `UnitOfDensity` / `UnitOfRatio` unit enums
+  (they are absent at 2026.6.0), and that core's own `requires-python` is
+  `>=3.14.2`. `hacs.json` now declares the new floor, so HACS will not
+  offer this version to older cores; they stay on 0.1.1.
+- Migrated off the deprecated `CONCENTRATION_*` unit constants onto the
+  `UnitOfDensity` / `UnitOfRatio` StrEnums in `sensor.py` and
+  `statistics.py` — `CONCENTRATION_MICROGRAMS_PER_CUBIC_METER` →
+  `UnitOfDensity.MICROGRAMS_PER_CUBIC_METER` (PM2.5 / PM10 / PM1) and
+  `CONCENTRATION_PARTS_PER_MILLION` → `UnitOfRatio.PARTS_PER_MILLION`
+  (CO₂). Core deprecated all six `CONCENTRATION_*` constants upstream via
+  `DeprecatedConstantEnum`, with **removal scheduled for HA Core 2027.8**.
+  No unit string and no runtime behaviour changes: the deprecated names
+  already resolve to these exact enum members with byte-identical values
+  (`μg/m³`, `ppm`), so entity states, `unit_of_measurement` attributes and
+  long-term statistics rows are unaffected. The swap only removes the
+  startup deprecation warning and pre-empts the 2027.8 removal.
+  `PERCENTAGE` was *not* deprecated upstream and is left exactly as-is.
+- Toolchain moved to Python 3.14 to match the new floor: all four CI gates,
+  the `CONTRIBUTING.md` dev commands, ruff `target-version` (`py313` →
+  `py314` — it must equal the *oldest* supported Python) and mypy's
+  `python_version`. A job left on 3.13 would resolve a pre-2026.7 core and
+  fail at import on the missing unit enums.
+
 ## [0.1.1] - 2026-08-09
 
 ### Changed
+
 - `docs/architecture.md`: the payload table spelled `µg/m³` with U+00B5 MICRO
   SIGN; Home Assistant's canonical value (`UnitOfDensity.MICROGRAMS_PER_CUBIC_METER`)
   is U+03BC GREEK SMALL LETTER MU. Docs-only — `sensor.py` and `statistics.py`
   take the unit from HA's constant, never a literal.
 
 ### Added
+
 - `tests/test_init.py`: pins the backfill background task's crash
   containment — a failing `async_backfill_statistics` must be logged, not
   fail entry setup. Restores the 100% coverage the CI gate requires (the

@@ -25,7 +25,9 @@ quality monitor, via IQAir's public per-device node API.
   (publishing is what exposes the node API).
 - The unit's **24-character node ID**. Find it in your IQAir dashboard URL,
   or in the network traffic of the unit's station page.
-- Home Assistant 2025.1.0 or newer. No account, API key, or cloud login.
+- Home Assistant **2026.7.0 or newer** — the first core release shipping the
+  `UnitOfDensity` / `UnitOfRatio` unit enums this integration uses (that core
+  runs on Python 3.14). No account, API key, or cloud login.
 
 ## Installation
 
