@@ -22,7 +22,8 @@ jobs:
     # would be empty and the job would fail with a confusing error on every
     # drive-by PR to this PUBLIC repo. Skip cleanly instead, and keep review
     # spend to branches in this repository (plus Dependabot, which is why
-    # allowed_bots is set below).
+    # allowed_bots is set below). Note this is failure-noise control, not a
+    # quota control: the action itself already refuses non-write actors.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository
 

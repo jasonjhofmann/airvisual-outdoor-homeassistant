@@ -16,12 +16,23 @@ concurrency:
 
 jobs:
   claude:
-    # The repository is PUBLIC, so the @claude mention alone is not an
-    # authorisation check: any GitHub user could open an issue or drop a
-    # comment saying "@claude" and spend the owner's Claude quota on a prompt
-    # they control. Require the author to be the owner or someone with write
-    # access as well. (author_association is OWNER / MEMBER / COLLABORATOR /
-    # CONTRIBUTOR / FIRST_TIME_CONTRIBUTOR / NONE.)
+    # Defence in depth, and noise control -- NOT quota protection.
+    #
+    # claude-code-action already refuses non-write actors on its own:
+    # src/entrypoints/prepare.ts calls checkWritePermissions() at step 3,
+    # BEFORE the trigger check and before any Claude call, and throws
+    # "Actor does not have write permissions to the repository". That check
+    # fails CLOSED -- an API error re-throws rather than allowing. So a
+    # stranger's "@claude" issue on this PUBLIC repo does not spend Claude
+    # quota, and the mention alone was never an authorisation hole.
+    #
+    # What it DOES cost without this gate: every stranger who mentions
+    # "@claude" starts a runner and leaves a FAILED workflow run in the
+    # Actions tab. Gating here means the job never starts, and the guarantee
+    # stops depending on the action keeping its internal check.
+    #
+    # author_association is OWNER / MEMBER / COLLABORATOR / CONTRIBUTOR /
+    # FIRST_TIME_CONTRIBUTOR / NONE.
     if: |
       (
         (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') &&

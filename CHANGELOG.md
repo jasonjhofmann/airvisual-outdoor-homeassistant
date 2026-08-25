@@ -154,13 +154,23 @@ silent-failure paths and a config-flow UX defect.
 
 ### Security
 
-- **The `@claude` workflows were open to the whole internet.** This
-  repository is public, so any GitHub user could open an issue or comment
-  containing `@claude` and spend the owner's Claude quota running an agent on
-  a prompt they controlled. Both Claude workflows now require the author to
-  be the repository owner, a member, or a collaborator; the review workflow
-  additionally skips fork PRs (which get no secrets under `pull_request` and
-  could only ever fail) and cancels superseded runs.
+- **The `@claude` workflows now require write access** — defence in depth and
+  noise control, *not* quota protection. An earlier draft of this entry
+  claimed any GitHub user could spend the owner's Claude quota by mentioning
+  `@claude`; that was wrong. `claude-code-action` already refuses non-write
+  actors on its own: `src/entrypoints/prepare.ts` calls
+  `checkWritePermissions()` at step 3 — before the trigger check and before
+  any Claude call — and throws `Actor does not have write permissions to the
+  repository`, failing **closed** (an API error re-throws). What the missing
+  gate did cost was a started runner and a **failed workflow run** in the
+  Actions tab for every stranger who mentioned `@claude`. The job-level `if:`
+  now filters on `author_association`, so the job never starts and the
+  guarantee stops depending on the action's internal check. The review
+  workflow additionally skips fork PRs (which get no secrets under
+  `pull_request` and could only ever fail) and cancels superseded runs.
+  Note: the `issues` trigger fires on `[opened, assigned]` and
+  `author_association` is the *issue author's*, so assigning a stranger's
+  issue no longer triggers Claude — comment `@claude` on it instead.
 - `ci.yml` gained an explicit least-privilege `permissions: contents: read`
   (it previously inherited the repository default) and, with `validate.yml`,
   a concurrency group so a burst of pushes runs the gates once.
