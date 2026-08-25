@@ -89,7 +89,17 @@
         "name": "Pressure"
       },
       "main_pollutant": {
-        "name": "Main pollutant"
+        "name": "Main pollutant",
+        "state": {
+          "pm25": "PM2.5",
+          "pm10": "PM10",
+          "pm1": "PM1",
+          "co2": "CO2",
+          "o3": "Ozone",
+          "no2": "Nitrogen dioxide",
+          "so2": "Sulphur dioxide",
+          "co": "Carbon monoxide"
+        }
       },
       "last_updated": {
         "name": "Last updated"

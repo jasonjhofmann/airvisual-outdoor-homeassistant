@@ -284,6 +284,20 @@ class AirVisualOutdoorClient:
                 )
             elif remaining > 2:
                 self._warned_low_budget = False
+        # KEY SET only, never values: the whole design problem here is
+        # hot-pluggable modules whose keys appear and disappear, and a
+        # "sensor reads unknown" report is unanswerable without knowing
+        # which keys the node actually sent that cycle.
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            current = payload.get("current")
+            _LOGGER.debug(
+                "Node %s payload: current keys=%s, hourly entries=%d,"
+                " budget remaining=%s",
+                self.node_id,
+                sorted(current) if isinstance(current, dict) else None,
+                len(_hourly(payload)),
+                remaining,
+            )
         return normalise(payload, remaining)
 
 

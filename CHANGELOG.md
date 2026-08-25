@@ -198,6 +198,21 @@ silent-failure paths and a config-flow UX defect.
   three non-obvious recorder behaviours above, verified against HA 2026.8
   source, so the next change to `statistics.py` starts from ground truth.
 
+### Observability
+
+- `api.py` had no DEBUG logging at all, in an integration whose stated core
+  problem is hot-pluggable modules whose payload keys appear and disappear —
+  so "a sensor reads unknown" was unanswerable. One DEBUG line now records
+  the payload's **key set** (never values), the hourly-entry count and the
+  remaining budget.
+- The backfill's three silent early exits (no hourly history, nothing inside
+  the window, no enabled target entity) now say so at DEBUG instead of
+  returning 0 without a word.
+- `Main pollutant` reported the raw API token (`pm25`). Its states are now
+  localized. Deliberately without `device_class: enum` + `options`: IQAir
+  does not document a closed token set, and an unlisted value would then be
+  an invalid state rather than simply falling through.
+
 ### Testing
 
 - The backfill suite asserted only row *starts*, row counts and

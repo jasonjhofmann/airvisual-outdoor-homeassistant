@@ -179,6 +179,7 @@ async def async_backfill_statistics(
 
     reading = coordinator.data
     if reading is None or not reading.hourly:
+        _LOGGER.debug("No hourly history in the payload; nothing to backfill")
         return 0
 
     now = dt_util.utcnow()
@@ -202,6 +203,12 @@ async def async_backfill_statistics(
             len(in_window) - len(candidates),
         )
     if not candidates:
+        _LOGGER.debug(
+            "%d hourly entries, none inside the backfill window (%s..%s)",
+            len(reading.hourly),
+            cutoff,
+            newest,
+        )
         return 0
 
     ent_reg = er.async_get(hass)
@@ -226,6 +233,11 @@ async def async_backfill_statistics(
             continue
         targets[entity_id] = source
     if not targets:
+        _LOGGER.debug(
+            "None of the %d backfill sources resolved to an enabled entity for node %s",
+            len(BACKFILL_SOURCES),
+            node_id,
+        )
         return 0
 
     # ONE recorder round-trip for every entity, not one per entity.
