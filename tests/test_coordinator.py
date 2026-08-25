@@ -152,3 +152,25 @@ async def test_unload_entry_tears_down_cleanly(
 
     assert init_integration.state is ConfigEntryState.NOT_LOADED
     assert hass.states.get("sensor.backyard_co2").state == STATE_UNAVAILABLE
+
+
+async def test_future_timestamp_logs_the_clock_possibility(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The staleness guard is absolute, so the message must not say 'older'."""
+    from dataclasses import replace
+
+    from homeassistant.util import dt as dt_util
+
+    coordinator = init_integration.runtime_data
+    ahead = replace(coordinator.data, ts=dt_util.utcnow() + timedelta(hours=6))
+    mock_client.async_get_reading.return_value = ahead
+    caplog.clear()
+    await coordinator.async_refresh()
+
+    assert "more than" in caplog.text
+    assert "clock is wrong" in caplog.text
+    assert "older than" not in caplog.text

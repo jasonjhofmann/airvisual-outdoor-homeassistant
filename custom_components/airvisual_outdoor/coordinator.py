@@ -137,11 +137,14 @@ class AirVisualOutdoorCoordinator(DataUpdateCoordinator[NodeReading]):
             return
         self._stale = stale
         if stale:
+            # Not always "older than": the guard is absolute, so a device
+            # whose clock runs ahead trips it too, and saying "older" there
+            # would send the reader looking for the wrong problem.
             _LOGGER.warning(
-                "Node %s is serving a stale sample (timestamp %s, older than"
-                " %s); the API still answers 200, so the station itself has"
-                " most likely stopped reporting. Entities are unavailable"
-                " until it recovers",
+                "Node %s is serving a stale sample (timestamp %s, more than"
+                " %s away from now); the API still answers 200, so the"
+                " station has most likely stopped reporting — or its clock"
+                " is wrong. Entities are unavailable until it recovers",
                 self.client.node_id,
                 reading.ts,
                 STALENESS_THRESHOLD,
