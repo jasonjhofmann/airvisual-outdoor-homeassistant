@@ -104,6 +104,15 @@ after its first successful run on every supported Home Assistant version.
 
 ### Added
 
+- Diagnostics now answer *why* entities are unavailable. "Failed poll" and
+  "successful poll of a sample the cloud has been serving since the station
+  died" both present identically to the user, and the download could not tell
+  them apart: it carried neither the coordinator's last exception nor the
+  sample's age. It now reports `last_exception` (rendered **with its cause
+  chain** — `repr(UpdateFailed)` alone is just `UpdateFailed('update_failed')`,
+  which is useless in a bug report), `sample_age_seconds`,
+  `sample_is_stale`, `staleness_threshold_seconds`, `update_interval_seconds`
+  and `entry_version`.
 - `tests/test_packaging.py`: enforces the repository invariants CONTRIBUTING
   only asserted in prose — `strings.json` / `translations/en.json` parity,
   `api.py` staying free of Home Assistant imports, translation-key liveness
