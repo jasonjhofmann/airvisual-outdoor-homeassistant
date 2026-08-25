@@ -67,6 +67,20 @@ after its first successful run on every supported Home Assistant version.
   field in the reconfigure flow left the stale connection — and the network
   device link — in place. The device's connections are now reconciled
   against the entry on every setup.
+- **The config flow threw away everything you typed on a validation error.**
+  Both steps re-showed the bare schema, so a mistyped MAC cost the user the
+  node id as well — 24 hex characters to retype to fix an unrelated field —
+  along with the name and the AQI scale they had selected. On reconfigure the
+  scale silently reverted to the stored value in a control the user had
+  already changed. Both steps now feed the submitted values back in.
+- **A dead station went unavailable in total silence.** It is the one failure
+  mode that logged nothing anywhere: the cloud answers HTTP 200, the
+  coordinator succeeds, and the entity-level staleness guard quietly blanks
+  every entity — leaving the user a device full of `unavailable` and an empty
+  log. The coordinator now logs once, with the sample timestamp and the
+  likely cause, when a node starts serving stale data, and once when it
+  recovers. "Stale" now has a single definition shared by the log and the
+  availability guard, so they cannot disagree.
 - **In-flight backfills outlived their config entry.** The background task
   used `hass.async_create_background_task`, which is only cancelled at HA
   shutdown, so an unload or reload could leave a backfill writing statistics
@@ -117,9 +131,38 @@ after its first successful run on every supported Home Assistant version.
   only asserted in prose — `strings.json` / `translations/en.json` parity,
   `api.py` staying free of Home Assistant imports, translation-key liveness
   in both directions, and manifest/hacs metadata agreement.
+- **A CI job that actually exercises the declared minimum HA version.** All
+  four existing gates resolve the *latest* Home Assistant, so the 2026.7.0
+  floor in `hacs.json` was never tested: the code could start depending on a
+  2026.8-only API and CI would stay green while HACS offered the release to a
+  2026.7 user. A new job reads the floor out of `hacs.json`, imports every
+  module against it, and runs mypy --strict there.
+- Tests for the constants that encode a **measured external constraint**.
+  Nothing pinned `DEFAULT_SCAN_INTERVAL` — the value the entire rate-limit
+  characterisation hangs on. Because IQAir's 30/hour budget is global per node
+  across every client IP on the internet, a careless edit there does not just
+  degrade this integration, it can drain a published station's budget for
+  everyone else polling it. The cadence is now asserted as a derived property
+  (requests/hour against the documented budget and headroom) rather than a
+  bare `== 300`, so the test states why the number is what it is.
 - `docs/architecture.md` gained a **Recorder contract** section recording the
   three non-obvious recorder behaviours above, verified against HA 2026.8
   source, so the next change to `statistics.py` starts from ground truth.
+
+### Testing
+
+- The backfill suite asserted only row *starts*, row counts and
+  `metadata["source"]` — never `row["mean"]` or the unit. The extractor
+  lambdas ran and their outputs were discarded, so swapping `pm25_conc` for
+  `pm10_conc`, or importing temperature under `%`, passed every test at 100%
+  line *and* branch coverage. Each channel's values and unit are now pinned
+  against the captured fixture.
+- Several assertions computed their expected value from the very constant
+  under test (`imported == len(BACKFILL_SOURCES) * 2`, a stale timestamp built
+  as `utcnow() - STALENESS_THRESHOLD - 1 minute`), so they held for *any*
+  value of that constant. Replaced with literals.
+- Added explicit `async_unload_entry` coverage; it had only ever been reached
+  incidentally, via the reconfigure flow's reload.
 
 ### Documentation
 

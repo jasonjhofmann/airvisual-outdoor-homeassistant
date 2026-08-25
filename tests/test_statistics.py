@@ -82,9 +82,11 @@ async def test_backfill_imports_missing_hours(
     with rec, during, imp as import_mock:
         imported = await async_backfill_statistics(hass, coordinator)
 
-    # 7 backfillable sensors × 2 fixture hours
-    assert imported == len(BACKFILL_SOURCES) * 2
-    assert import_mock.call_count == len(BACKFILL_SOURCES)
+    # 7 backfillable sensors x 2 fixture hours. Pinned as literals on
+    # purpose: deriving them from BACKFILL_SOURCES would make the assertion
+    # hold for any value of the constant under test.
+    assert imported == 14
+    assert import_mock.call_count == 7
     _, metadata, rows = import_mock.call_args_list[0][0]
     assert metadata["source"] == "recorder"
     assert [row["start"] for row in rows] == [HOUR_1, HOUR_2]
@@ -112,8 +114,15 @@ async def test_backfill_uses_one_recorder_roundtrip(
 
     assert during.call_count == 1
     requested_ids = during.call_args[0][3]
-    assert len(requested_ids) == len(BACKFILL_SOURCES)
-    assert "sensor.backyard_pm2_5" in requested_ids
+    assert requested_ids == {
+        "sensor.backyard_pm2_5",
+        "sensor.backyard_pm10",
+        "sensor.backyard_pm1",
+        "sensor.backyard_co2",
+        "sensor.backyard_temperature",
+        "sensor.backyard_humidity",
+        "sensor.backyard_pressure",
+    }
 
 
 async def test_backfill_skips_existing_hours(
@@ -137,7 +146,7 @@ async def test_backfill_skips_existing_hours(
         imported = await async_backfill_statistics(hass, coordinator)
 
     # Only HOUR_2 remains per sensor.
-    assert imported == len(BACKFILL_SOURCES)
+    assert imported == 7
     for call in import_mock.call_args_list:
         rows = call[0][2]
         assert [row["start"] for row in rows] == [HOUR_2]
@@ -161,7 +170,7 @@ async def test_backfill_skips_current_and_just_completed_hour(
     with rec, during, imp as import_mock:
         imported = await async_backfill_statistics(hass, coordinator)
 
-    assert imported == len(BACKFILL_SOURCES)  # HOUR_1 only
+    assert imported == 7  # HOUR_1 only
     for call in import_mock.call_args_list:
         rows = call[0][2]
         assert [row["start"] for row in rows] == [HOUR_1]
@@ -329,3 +338,45 @@ def test_backfill_sources_match_sensor_units() -> None:
     for source in BACKFILL_SOURCES:
         assert source.key in by_key, f"{source.key} has no sensor description"
         assert source.unit == by_key[source.key].native_unit_of_measurement
+
+
+# Expected (entity_id, unit, [HOUR_1 mean, HOUR_2 mean]) straight from the
+# captured fixture's two hourly entries.
+EXPECTED_IMPORT = {
+    "sensor.backyard_pm2_5": ("μg/m³", [1.0, 1.0]),
+    "sensor.backyard_pm10": ("μg/m³", [2.0, 2.0]),
+    "sensor.backyard_pm1": ("μg/m³", [1.0, 1.0]),
+    "sensor.backyard_co2": ("ppm", [490.0, 460.0]),
+    "sensor.backyard_temperature": ("°C", [35.0, 33.0]),
+    "sensor.backyard_humidity": ("%", [27.0, 36.0]),
+    "sensor.backyard_pressure": ("Pa", [92167.0, 92221.0]),
+}
+
+
+async def test_backfill_imports_the_right_channel_and_unit(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    recorder_loaded: None,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Each statistic gets ITS OWN hourly channel, under its own unit.
+
+    The other backfill tests only assert row starts and counts, so the
+    extractor lambdas ran and their outputs were discarded: swapping
+    ``pm25_conc`` for ``pm10_conc``, or importing temperature under ``%``,
+    passed every one of them at 100% line and branch coverage.
+    """
+    freezer.move_to(FROZEN_NOW)
+    coordinator = init_integration.runtime_data
+    rec, during, imp = _patches()
+    with rec, during, imp as import_mock:
+        await async_backfill_statistics(hass, coordinator)
+
+    got = {
+        metadata["statistic_id"]: (
+            metadata["unit_of_measurement"],
+            [row["mean"] for row in rows],
+        )
+        for _, metadata, rows in (call[0] for call in import_mock.call_args_list)
+    }
+    assert got == EXPECTED_IMPORT

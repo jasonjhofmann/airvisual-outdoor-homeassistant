@@ -19,7 +19,6 @@ from custom_components.airvisual_outdoor.const import (
     CONF_NODE_ID,
     DOMAIN,
     SCALE_CN,
-    STALENESS_THRESHOLD,
 )
 
 from .conftest import TEST_MAC, TEST_NODE_ID, setup_integration
@@ -148,10 +147,9 @@ async def test_stale_sample_goes_unavailable(
     sample_reading: NodeReading,
 ) -> None:
     """A 200-but-stale ``current`` block must not report as healthy."""
-    stale = replace(
-        sample_reading,
-        ts=dt_util.utcnow() - STALENESS_THRESHOLD - timedelta(minutes=1),
-    )
+    # A literal 11 minutes, not STALENESS_THRESHOLD + 1: deriving the input
+    # from the constant under test makes the assertion hold for any threshold.
+    stale = replace(sample_reading, ts=dt_util.utcnow() - timedelta(minutes=11))
     from .conftest import build_mock_client
 
     client: MagicMock = build_mock_client(stale)
@@ -238,9 +236,7 @@ async def test_last_updated_survives_a_stale_sample(
     from .conftest import build_mock_client
 
     # HA's timestamp sensor renders whole seconds.
-    stale_at = (dt_util.utcnow() - STALENESS_THRESHOLD - timedelta(minutes=5)).replace(
-        microsecond=0
-    )
+    stale_at = (dt_util.utcnow() - timedelta(minutes=15)).replace(microsecond=0)
     client = build_mock_client(replace(sample_reading, ts=stale_at))
     await setup_integration(hass, mock_config_entry, client)
 

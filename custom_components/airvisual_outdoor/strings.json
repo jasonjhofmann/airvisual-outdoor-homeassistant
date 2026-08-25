@@ -25,7 +25,7 @@
           "mac": "MAC address (optional)"
         },
         "data_description": {
-          "aqi_scale": "Switching scale replaces the AQI and main-pollutant entities: the new scale's are created and the old scale's are removed. Their history does not carry over.",
+          "aqi_scale": "Switching scale replaces the AQI and main-pollutant entities: the new scale's are created and the old scale's are removed. History does not carry over; the old scale's long-term statistics remain under Developer tools → Statistics until you delete them.",
           "mac": "If set, Home Assistant links this device with its network (DHCP/UniFi) client entry. Clear the field to remove the link."
         }
       }

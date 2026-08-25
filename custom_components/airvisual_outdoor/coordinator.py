@@ -7,6 +7,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import (
     AirVisualOutdoorClient,
@@ -14,11 +15,24 @@ from .api import (
     NodeReading,
     RateLimitError,
 )
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, STALENESS_THRESHOLD
 
 _LOGGER = logging.getLogger(__name__)
 
 type AirVisualOutdoorConfigEntry = ConfigEntry[AirVisualOutdoorCoordinator]
+
+
+def sample_is_stale(reading: NodeReading | None) -> bool:
+    """Whether the payload's own sample timestamp is too old to trust.
+
+    The single definition of "stale" — the entity availability guard and the
+    coordinator's staleness logging both call this, so the log can never
+    disagree with what the user sees. A missing ``ts`` counts as stale:
+    no proof of freshness is not proof of freshness.
+    """
+    if reading is None or reading.ts is None:
+        return True
+    return dt_util.utcnow() - reading.ts > STALENESS_THRESHOLD
 
 
 class AirVisualOutdoorCoordinator(DataUpdateCoordinator[NodeReading]):
@@ -42,6 +56,7 @@ class AirVisualOutdoorCoordinator(DataUpdateCoordinator[NodeReading]):
         )
         self.client = client
         self._rate_limited = False
+        self._stale = False
 
     async def _async_update_data(self) -> NodeReading:
         """Fetch the node's current reading.
@@ -92,4 +107,32 @@ class AirVisualOutdoorCoordinator(DataUpdateCoordinator[NodeReading]):
         if self._rate_limited:
             self._rate_limited = False
             _LOGGER.info("Node %s request budget recovered", self.client.node_id)
+        self._log_staleness(reading)
         return reading
+
+    def _log_staleness(self, reading: NodeReading) -> None:
+        """Say WHY entities went unavailable on an otherwise healthy poll.
+
+        A dead station is the one failure mode that produces no log line
+        anywhere: the cloud answers 200, the coordinator succeeds, and the
+        entities quietly go unavailable via the entity-level guard. Without
+        this the user has a device full of `unavailable` and an empty log.
+        """
+        stale = sample_is_stale(reading)
+        if stale == self._stale:
+            return
+        self._stale = stale
+        if stale:
+            _LOGGER.warning(
+                "Node %s is serving a stale sample (timestamp %s, older than"
+                " %s); the API still answers 200, so the station itself has"
+                " most likely stopped reporting. Entities are unavailable"
+                " until it recovers",
+                self.client.node_id,
+                reading.ts,
+                STALENESS_THRESHOLD,
+            )
+        else:
+            _LOGGER.info(
+                "Node %s is reporting fresh samples again", self.client.node_id
+            )

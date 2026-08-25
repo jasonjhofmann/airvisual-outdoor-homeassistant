@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -102,3 +103,52 @@ async def test_rate_limit_warning_is_edge_triggered(
     caplog.clear()
     await coordinator.async_refresh()
     assert caplog.text.count("request budget exhausted") == 1
+
+
+async def test_stale_sample_is_logged_once_with_the_reason(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A dead station must not go unavailable in silence.
+
+    It is the one failure mode that logs nothing anywhere: the cloud answers
+    200, the coordinator succeeds, and the entity-level guard quietly blanks
+    every entity. The user is left with a device full of `unavailable` and an
+    empty log.
+    """
+    from dataclasses import replace
+
+    from homeassistant.util import dt as dt_util
+
+    coordinator = init_integration.runtime_data
+    fresh = coordinator.data
+    stale = replace(fresh, ts=dt_util.utcnow() - timedelta(minutes=30))
+
+    mock_client.async_get_reading.return_value = stale
+    caplog.clear()
+    for _ in range(3):
+        await coordinator.async_refresh()
+    assert caplog.text.count("is serving a stale sample") == 1
+    assert "stopped reporting" in caplog.text
+
+    mock_client.async_get_reading.return_value = replace(fresh, ts=dt_util.utcnow())
+    caplog.clear()
+    await coordinator.async_refresh()
+    assert caplog.text.count("reporting fresh samples again") == 1
+
+
+async def test_unload_entry_tears_down_cleanly(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Explicit unload coverage: the entry unloads and its entities go away."""
+    from homeassistant.config_entries import ConfigEntryState
+
+    assert hass.states.get("sensor.backyard_co2") is not None
+
+    assert await hass.config_entries.async_unload(init_integration.entry_id)
+    await hass.async_block_till_done()
+
+    assert init_integration.state is ConfigEntryState.NOT_LOADED
+    assert hass.states.get("sensor.backyard_co2").state == STATE_UNAVAILABLE

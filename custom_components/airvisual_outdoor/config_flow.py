@@ -126,9 +126,14 @@ class AirVisualOutdoorConfigFlow(ConfigFlow, domain=DOMAIN):
                         data[CONF_MAC] = format_mac(mac_raw)
                     return self.async_create_entry(title=name, data=data)
 
+        # Re-showing the bare schema would blank every field the user just
+        # filled in — including a 24-character hex node id they would have to
+        # retype in full to fix a typo'd MAC. Feed their input back in.
         return self.async_show_form(
             step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
+            data_schema=self.add_suggested_values_to_schema(
+                STEP_USER_DATA_SCHEMA, dict(user_input or {})
+            ),
             errors=errors,
         )
 
@@ -157,10 +162,15 @@ class AirVisualOutdoorConfigFlow(ConfigFlow, domain=DOMAIN):
                     data[CONF_MAC] = format_mac(mac_raw)
                 return self.async_update_reload_and_abort(existing, data=data)
 
-        suggested = {
+        # On a validation error, prefer what the user just submitted over the
+        # stored values — otherwise their scale choice silently reverts in a
+        # control they had already changed.
+        suggested: dict[str, Any] = {
             CONF_AQI_SCALE: existing.data[CONF_AQI_SCALE],
             CONF_MAC: existing.data.get(CONF_MAC, ""),
         }
+        if user_input is not None:
+            suggested |= dict(user_input)
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=self.add_suggested_values_to_schema(

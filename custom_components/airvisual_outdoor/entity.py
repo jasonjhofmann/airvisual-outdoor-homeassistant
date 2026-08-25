@@ -8,16 +8,18 @@ from homeassistant.helpers.device_registry import (
     format_mac,
 )
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
-from .const import CONF_MAC, DOMAIN, STALENESS_THRESHOLD
-from .coordinator import AirVisualOutdoorCoordinator
+from .const import CONF_MAC, DOMAIN
+from .coordinator import AirVisualOutdoorCoordinator, sample_is_stale
 
 
 class AirVisualOutdoorEntity(CoordinatorEntity[AirVisualOutdoorCoordinator]):
     """Base entity bound to the node's device entry."""
 
     _attr_has_entity_name = True
+    #: Subclasses set this from their entity description. A staleness-exempt
+    #: entity reports the age of a dead station instead of hiding it.
+    _staleness_exempt: bool = False
 
     def __init__(self, coordinator: AirVisualOutdoorCoordinator) -> None:
         """Register against the per-node device."""
@@ -36,10 +38,6 @@ class AirVisualOutdoorEntity(CoordinatorEntity[AirVisualOutdoorCoordinator]):
         if mac := entry.data.get(CONF_MAC):
             device_info["connections"] = {(CONNECTION_NETWORK_MAC, format_mac(mac))}
         self._attr_device_info = device_info
-
-    #: Subclasses set this from their entity description. A staleness-exempt
-    #: entity reports the age of a dead station instead of hiding it.
-    _staleness_exempt: bool = False
 
     @property
     def available(self) -> bool:
@@ -60,7 +58,4 @@ class AirVisualOutdoorEntity(CoordinatorEntity[AirVisualOutdoorCoordinator]):
             return False
         if self._staleness_exempt:
             return True
-        ts = self.coordinator.data.ts
-        if ts is None:
-            return False
-        return dt_util.utcnow() - ts <= STALENESS_THRESHOLD
+        return not sample_is_stale(self.coordinator.data)

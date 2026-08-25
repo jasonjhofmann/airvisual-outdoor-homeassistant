@@ -49,7 +49,7 @@ Settings → Devices & Services → **Add Integration** → "AirVisual Outdoor".
 |---|---|
 | Node ID | The unit's 24-hex id. Validated with one live API call. |
 | Name | Device name; defaults to the name the unit reports. **Entity ids derive from this name** — choose it deliberately. |
-| AQI scale | US (EPA, default) or China (MEE). One scale per entry — exactly one AQI sensor and one main-pollutant sensor are created. Switch later via *Reconfigure*: the new scale's entities are created and the old scale's are removed (so the main-pollutant entity keeps its original entity id rather than gaining a `_2` suffix). Their history does not carry over — the two scales are not comparable. |
+| AQI scale | US (EPA, default) or China (MEE). One scale per entry — exactly one AQI sensor and one main-pollutant sensor are created. Switch later via *Reconfigure*: the new scale's entities are created and the old scale's are removed (so the main-pollutant entity keeps its original entity id rather than gaining a `_2` suffix). History does not carry over — the two standards are not comparable. The old scale's long-term statistics are *not* deleted; they remain as an orphaned statistic, removable under Developer tools → Statistics. |
 | MAC address | Optional. If set, HA links the device with its network (DHCP/UniFi) client entry. Clearing it via *Reconfigure* removes the link again. |
 
 Multiple monitors = multiple entries, one per node ID. Each node has its own

@@ -91,3 +91,67 @@ def test_no_translation_keys_are_dead() -> None:
     sources = "\n".join(p.read_text() for p in COMPONENT.glob("*.py"))
     for key in strings["config"]["error"]:
         assert f'"{key}"' in sources, f"error key {key} is never emitted"
+
+
+# --- constants that encode a MEASURED external constraint -------------------
+#
+# These are not style choices. docs/architecture.md characterised IQAir's
+# budget empirically as 30 requests per node per clock hour, GLOBAL across
+# every client IP on the internet, so a careless edit here does not just
+# degrade this integration — it can drain a published station's budget for
+# everyone else polling it. Nothing pinned them before.
+
+
+def test_poll_cadence_stays_inside_the_measured_rate_limit() -> None:
+    """The locked 300 s cadence keeps the documented headroom.
+
+    Asserted as a derived property (requests/hour vs the 30/hour budget)
+    rather than `== 300`, so the test states WHY the number is what it is.
+    """
+    from custom_components.airvisual_outdoor.const import DEFAULT_SCAN_INTERVAL
+
+    api_budget_per_hour = 30
+    requests_per_hour = 3600 / DEFAULT_SCAN_INTERVAL.total_seconds()
+
+    assert requests_per_hour == 12
+    # Two consumers of the same node (the documented cutover case) must fit.
+    assert requests_per_hour * 2 <= api_budget_per_hour
+    # ...with at least the 60% headroom architecture.md commits to.
+    assert requests_per_hour <= api_budget_per_hour * 0.4
+
+
+def test_backfill_window_matches_the_api_history_depth() -> None:
+    """The window is the depth of the API's own `hourly` array, not a guess."""
+    from custom_components.airvisual_outdoor.const import BACKFILL_WINDOW
+
+    assert BACKFILL_WINDOW.total_seconds() == 48 * 3600
+
+
+def test_backfill_throttle_fires_at_most_once_an_hour() -> None:
+    """Under the throttle, at most one backfill per clock hour."""
+    from custom_components.airvisual_outdoor.const import (
+        BACKFILL_MIN_INTERVAL,
+        DEFAULT_SCAN_INTERVAL,
+    )
+
+    assert BACKFILL_MIN_INTERVAL.total_seconds() <= 3600
+    # Long enough that consecutive polls cannot both run it.
+    assert BACKFILL_MIN_INTERVAL > DEFAULT_SCAN_INTERVAL
+
+
+def test_staleness_threshold_allows_at_least_one_missed_poll() -> None:
+    """A single dropped sample must not flap entities unavailable."""
+    from custom_components.airvisual_outdoor.const import (
+        DEFAULT_SCAN_INTERVAL,
+        STALENESS_THRESHOLD,
+    )
+
+    assert STALENESS_THRESHOLD.total_seconds() == 600
+    assert STALENESS_THRESHOLD > DEFAULT_SCAN_INTERVAL
+
+
+def test_compile_lag_leaves_the_recorder_its_own_hour() -> None:
+    """At least one full hour, or the unique-index collision comes back."""
+    from custom_components.airvisual_outdoor.statistics import COMPILE_LAG
+
+    assert COMPILE_LAG.total_seconds() >= 3600
