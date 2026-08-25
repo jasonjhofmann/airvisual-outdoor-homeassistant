@@ -210,7 +210,13 @@ statistics gap-backfill — deferred to Phase 2**, see below.)
 ### Statistics gap-backfill (Phase 2 feature, decided 2026-06-09)
 
 Every poll carries the device's own history (`instant` ~60×1-min, `hourly`
-48 h, `daily` 30 d, `monthly` 12 mo). Instead of discarding it, Phase 2
+48 h, `daily` 30 d, `monthly` 12 mo). An `hourly[i]` entry does NOT have the
+same shape as the `current` block documented above: `pm25`/`pm10` are still
+`{conc, aqius, aqicn}` objects, but **`pm1` is a flat number**, and there is
+no composite `aqius`/`aqicn` or `mainus`/`maincn` — which is why the
+backfill covers PM/CO₂/temperature/humidity/pressure but not AQI or main
+pollutant. Entry timestamps are on the top of the hour (see the recorder
+contract below for why that matters). Instead of discarding it, Phase 2
 back-injects missed hours into HA **long-term statistics** via the
 external/import-statistics machinery, so HA downtime never leaves permanent
 holes in the hourly mean/min/max record. Scope limits (by HA design, restate
@@ -265,7 +271,19 @@ integration got wrong before 0.2.1. Read these before touching
    itself, and if HA was down there are no short-term rows to collide with
    and the next pass imports it, still well inside the 48 h window.
 
-3. **The recorder may not be set up at all.** `get_instance()` is a bare
+3. **Row starts are validated synchronously, and one bad row rejects the
+   whole call.** `async_import_statistics` delegates to
+   `_async_import_statistics`, which raises `HomeAssistantError` for a naive
+   timestamp ("Naive timestamp: no or invalid timezone info provided") and
+   for any start that is not exactly on the hour ("Invalid timestamp:
+   timestamps must be from the top of the hour"). Both checks run over
+   EVERY row before anything is queued, so a single off-hour entry in the
+   API's `hourly` array would take the backfill down for all seven sensors,
+   every hour, for as long as the API kept sending it. `statistics.py`
+   therefore drops non-aligned entries (with a warning) rather than passing
+   them through, and `api.py` guarantees aware timestamps upstream.
+
+4. **The recorder may not be set up at all.** `get_instance()` is a bare
    `hass.data[DATA_INSTANCE]` lookup, so it raises `KeyError` rather than
    returning None when a user runs HA without the recorder — a supported
    configuration, not an error. `after_dependencies: ["recorder"]` only

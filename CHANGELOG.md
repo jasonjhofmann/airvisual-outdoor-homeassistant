@@ -48,7 +48,9 @@ after its first successful run on every supported Home Assistant version.
 - **Backfill crashed on every poll when the recorder is disabled.**
   `get_instance()` is a bare `hass.data[DATA_INSTANCE]` lookup, so running
   HA without the recorder — supported, not an error — raised `KeyError` and
-  logged a full traceback hourly. It is now a quiet no-op.
+  logged a full traceback hourly. It is now a quiet no-op. The remaining
+  backfill-failure log also names the entry, since a multi-node install has
+  one backfill per monitor and a bare traceback cannot say which.
 - **A zone-less API timestamp crashed every entity.** `_timestamp()` parsed
   a valid-but-naive `2026-06-10T03:52:07` into a naive `datetime`, which then
   raised `TypeError: can't subtract offset-naive and offset-aware datetimes`
@@ -73,6 +75,14 @@ after its first successful run on every supported Home Assistant version.
   along with the name and the AQI scale they had selected. On reconfigure the
   scale silently reverted to the stored value in a control the user had
   already changed. Both steps now feed the submitted values back in.
+- **One malformed hourly entry would have killed the whole backfill.**
+  HA validates every imported row's start synchronously and rejects the
+  entire call — `_async_import_statistics` raises `HomeAssistantError` for a
+  naive timestamp *and* for any start not exactly on the hour — so a single
+  off-hour entry from the API would take all seven sensors down with it,
+  every hour, for as long as the API kept sending it. Non-aligned entries are
+  now dropped individually, with a warning, and the rest of the batch still
+  imports.
 - **A dead station went unavailable in total silence.** It is the one failure
   mode that logged nothing anywhere: the cloud answers HTTP 200, the
   coordinator succeeds, and the entity-level staleness guard quietly blanks

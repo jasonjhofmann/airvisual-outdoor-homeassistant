@@ -380,3 +380,49 @@ async def test_backfill_imports_the_right_channel_and_unit(
         for _, metadata, rows in (call[0] for call in import_mock.call_args_list)
     }
     assert got == EXPECTED_IMPORT
+
+
+async def test_off_hour_entry_is_dropped_not_the_whole_batch(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    recorder_loaded: None,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """One malformed hourly entry must not kill the entire backfill.
+
+    HA validates row starts synchronously and rejects the WHOLE call —
+    ``_async_import_statistics`` raises ``HomeAssistantError("Invalid
+    timestamp: timestamps must be from the top of the hour")`` — so passing
+    an off-hour entry straight through would take all seven sensors down
+    with it, every hour, for as long as the API kept sending it.
+    """
+    from dataclasses import replace
+
+    freezer.move_to(FROZEN_NOW)
+    coordinator = init_integration.runtime_data
+    hourly = coordinator.data.hourly
+    coordinator.data = replace(
+        coordinator.data,
+        hourly=(replace(hourly[0], ts=hourly[0].ts.replace(minute=17)), hourly[1]),
+    )
+
+    rec, during, imp = _patches()
+    with rec, during, imp as import_mock:
+        imported = await async_backfill_statistics(hass, coordinator)
+
+    # HOUR_2 still lands; only the malformed entry is skipped.
+    assert imported == 7
+    for call in import_mock.call_args_list:
+        assert [row["start"] for row in call[0][2]] == [HOUR_2]
+    assert "not on the hour" in caplog.text
+
+
+def test_every_imported_start_would_pass_ha_validation() -> None:
+    """The guard matches HA's actual rule, not an approximation of it."""
+    from custom_components.airvisual_outdoor.statistics import _is_hour_aligned
+
+    assert _is_hour_aligned(HOUR_1)
+    assert not _is_hour_aligned(HOUR_1.replace(minute=1))
+    assert not _is_hour_aligned(HOUR_1.replace(second=1))
+    assert not _is_hour_aligned(HOUR_1.replace(microsecond=1))

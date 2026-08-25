@@ -54,7 +54,9 @@ async def async_setup_entry(
         try:
             await async_backfill_statistics(hass, coordinator)
         except Exception:
-            _LOGGER.exception("Statistics backfill failed")
+            # Entry title, not just the domain: a multi-node install has one
+            # of these per monitor and the traceback alone cannot say which.
+            _LOGGER.exception("Statistics backfill failed for %s", entry.title)
 
     def _maybe_backfill() -> None:
         nonlocal last_run

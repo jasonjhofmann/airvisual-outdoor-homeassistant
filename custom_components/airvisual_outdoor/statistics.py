@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Final
 
 from homeassistant.components.recorder.const import DOMAIN as RECORDER_DOMAIN
@@ -138,6 +138,11 @@ BACKFILL_SOURCES: tuple[BackfillSource, ...] = (
 )
 
 
+def _is_hour_aligned(ts: datetime) -> bool:
+    """Whether a timestamp sits exactly on the top of the hour."""
+    return ts.minute == 0 and ts.second == 0 and ts.microsecond == 0
+
+
 def _metadata(entity_id: str, source: BackfillSource) -> StatisticMetaData:
     """Statistics metadata for an entity-owned (source=recorder) import.
 
@@ -178,7 +183,23 @@ async def async_backfill_statistics(
     now = dt_util.utcnow()
     cutoff = now - BACKFILL_WINDOW
     newest = now.replace(minute=0, second=0, microsecond=0) - COMPILE_LAG
-    candidates = [h for h in reading.hourly if cutoff <= h.ts < newest]
+    in_window = [h for h in reading.hourly if cutoff <= h.ts < newest]
+
+    # HA validates every imported row's start SYNCHRONOUSLY and rejects the
+    # whole call: recorder/statistics.py::_async_import_statistics raises
+    # HomeAssistantError("Invalid timestamp: timestamps must be from the top
+    # of the hour") — so a single off-hour entry from the API would kill the
+    # backfill for ALL seven sensors, every hour, forever. Drop the offender
+    # instead of the batch. (Naive stamps, which it also rejects, cannot get
+    # this far: api.py normalises them to UTC.)
+    candidates = [h for h in in_window if _is_hour_aligned(h.ts)]
+    if len(candidates) != len(in_window):
+        _LOGGER.warning(
+            "Node %s returned %d hourly entries that are not on the hour;"
+            " skipping them (the rest of the backfill is unaffected)",
+            coordinator.client.node_id,
+            len(in_window) - len(candidates),
+        )
     if not candidates:
         return 0
 
