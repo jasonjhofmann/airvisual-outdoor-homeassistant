@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import aiohttp
@@ -142,13 +142,23 @@ def _header_int(value: str | None) -> int | None:
 
 
 def _timestamp(value: Any) -> datetime | None:
-    """Parse the API's ISO-8601 UTC ``ts``, tolerating absence/garbage."""
+    """Parse the API's ISO-8601 UTC ``ts``, tolerating absence/garbage.
+
+    Always returns an AWARE datetime. A syntactically valid but zone-less
+    stamp (``2026-06-10T03:52:07``) parses fine and would otherwise poison
+    every consumer: the availability guard subtracts it from an aware
+    ``utcnow()`` and the backfill compares it against an aware window, both
+    of which raise ``TypeError`` on naive/aware mixing. The endpoint is
+    documented UTC, so a missing designator is assumed UTC rather than
+    discarded.
+    """
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def _hourly(payload: dict[str, Any]) -> tuple[HourlyReading, ...]:

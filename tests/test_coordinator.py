@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -67,3 +68,37 @@ async def test_transport_error_marks_unavailable(
     state = hass.states.get("sensor.backyard_co2")
     assert state is not None
     assert state.state == STATE_UNAVAILABLE
+
+
+async def test_rate_limit_warning_is_edge_triggered(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The drained-budget warning logs once per episode, not once per poll.
+
+    The keep-last-reading branch deliberately holds ``last_update_success``
+    True, which bypasses DataUpdateCoordinator's own once-per-episode log
+    suppression. Without an explicit edge trigger a third-party drain emits
+    12 identical warnings an hour for as long as it lasts.
+    """
+    coordinator = init_integration.runtime_data
+
+    mock_client.async_get_reading.side_effect = RateLimitError("drained")
+    caplog.clear()
+    for _ in range(4):
+        await coordinator.async_refresh()
+    assert caplog.text.count("request budget exhausted") == 1
+
+    # ...and one line on recovery, so the episode has a visible end.
+    mock_client.async_get_reading.side_effect = None
+    caplog.clear()
+    await coordinator.async_refresh()
+    assert caplog.text.count("request budget recovered") == 1
+
+    # A second episode logs again.
+    mock_client.async_get_reading.side_effect = RateLimitError("drained again")
+    caplog.clear()
+    await coordinator.async_refresh()
+    assert caplog.text.count("request budget exhausted") == 1

@@ -1,8 +1,12 @@
 {
   "domain": "airvisual_outdoor",
   "name": "AirVisual Outdoor",
-  "after_dependencies": ["recorder"],
-  "codeowners": ["@jasonjhofmann"],
+  "after_dependencies": [
+    "recorder"
+  ],
+  "codeowners": [
+    "@jasonjhofmann"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant",
@@ -11,5 +15,5 @@
   "issue_tracker": "https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/issues",
   "quality_scale": "platinum",
   "requirements": [],
-  "version": "0.2.0"
+  "version": "0.2.1"
 }

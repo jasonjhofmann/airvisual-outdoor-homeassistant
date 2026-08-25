@@ -86,11 +86,16 @@ Responses carry `x-ratelimit-limit: 30` / `x-ratelimit-remaining: N`
   header**. Recovery = the next :00 UTC reset; there is nothing to honor
   beyond waiting, so the coordinator's normal retry cadence is the correct
   backoff.
-- Phase 3 refinement (noted): on `RateLimitError` the coordinator currently
-  fails the cycle, marking entities unavailable until a poll succeeds. A
-  third-party drain of a published node could therefore blip entities
-  unavailable for up to ~an hour. Consider keeping last-known data on 429
-  (the `ts` staleness guard already protects against serving dead data).
+- **429 handling (SHIPPED in 0.1.0, was "Phase 3 refinement")**: the
+  coordinator no longer fails the cycle on `RateLimitError`. It keeps the
+  last reading and leaves `last_update_success` True, because a third-party
+  drain of a published node would otherwise blip entities unavailable for up
+  to an hour; the `ts` staleness guard owns availability instead. Because
+  that branch keeps the cycle "successful", it also bypasses
+  DataUpdateCoordinator's own once-per-episode log suppression, so the
+  drain/recovery warning is edge-triggered by hand in `coordinator.py`.
+  With no prior reading there is nothing to keep, so the first fetch still
+  fails into `SETUP_RETRY`.
 
 **Poll interval: LOCKED at 300 s** (12 req/h/node, 60% headroom; matches the
 legacy REST package's cadence, and even brief co-polling during cutover fits:
@@ -134,7 +139,7 @@ If this integration is ever upstreamed to HA core, core's library-first rule
 applies and the client extracts mechanically into a tiny PyPI package
 (or lands as a pyairvisual contribution) at that point — see Roadmap.
 
-## Proposed shape (PENDING DISCUSSION — see open questions)
+## Integration shape (SHIPPED — settled 2026-06-09/10, see open questions)
 
 - **Domain**: `airvisual_outdoor`, display name "AirVisual Outdoor".
 - **Entry topology**: one config entry per node. No account/hub entry and no
@@ -216,21 +221,73 @@ against the entity's existing statistics rows; insert only missing hours;
 never overwrite existing rows. Daily/monthly arrays stay unused (HA derives
 longer aggregates from hourly).
 
+#### Recorder contract (ground truth, verified against HA 2026.8 source)
+
+Three constraints that are NOT obvious from the HA docs and that this
+integration got wrong before 0.2.1. Read these before touching
+`statistics.py`.
+
+1. **`StatisticMetaData["unit_class"]` is REQUIRED, and omitting it fails
+   silently-then-loudly.** On the first import the metadata row does not yet
+   exist and HA takes the `_add_metadata` path, which tolerates the missing
+   key (the column is left NULL). HA's own sensor recorder platform then
+   writes the correct `unit_class` for the same entity. From then on every
+   import takes `StatisticsMetaManager._update_metadata`, which evaluates
+   `new_metadata["unit_class"]` unconditionally and raises
+   `KeyError: 'unit_class'` **inside the recorder thread** — where this
+   integration's `try/except` cannot see it, because `async_import_statistics`
+   only *queues* the job. Net effect before the fix: backfill worked once,
+   then never again, with a recorder traceback each hour.
+   The value must equal what HA derives for the same entity
+   (`homeassistant.components.sensor.recorder._get_unit_class`, i.e.
+   `UNIT_CONVERTERS[device_class]` falling back to
+   `STATISTIC_UNIT_TO_UNIT_CONVERTER[unit]`), or the import and the sensor
+   platform rewrite each other's metadata row on every compile. For this
+   integration's units: PM2.5/PM10/PM1 (μg/m³) → `concentration`, CO₂ (ppm)
+   → `unitless`, temperature (°C) → `temperature`, humidity (%) →
+   `unitless`, pressure (Pa) → `pressure`. `tests/test_statistics.py`
+   re-derives all seven from HA's own maps so an upstream change fails CI.
+   Corollary: do NOT assemble the metadata as a `dict` + `cast()`. It is a
+   TypedDict with required keys; building it as a literal is what lets
+   mypy --strict catch a missing one. The `cast()` is exactly what hid this.
+
+2. **Never import the hour that just completed.** The recorder compiles its
+   own hourly row for hour H shortly after H+1:00 by summarising that hour's
+   short-term statistics, and `_compile_hourly_statistics` does a bare
+   `session.add_all()` against a UNIQUE `(metadata_id, start_ts)` index.
+   Importing H first makes that INSERT collide; `session_scope`'s
+   `filter_unique_constraint_integrity_error` swallows it but logs
+   *"Blocked attempt to insert duplicated statistic rows, please report at
+   <core issue tracker>"* and rolls back the whole compile period — i.e. a
+   custom integration's bug that reads to the user as a core bug. Hence
+   `COMPILE_LAG`. Skipping one hour costs nothing: if HA was up for hour H
+   the recorder has the states and produces a *better* (min/mean/max) row
+   itself, and if HA was down there are no short-term rows to collide with
+   and the next pass imports it, still well inside the 48 h window.
+
+3. **The recorder may not be set up at all.** `get_instance()` is a bare
+   `hass.data[DATA_INSTANCE]` lookup, so it raises `KeyError` rather than
+   returning None when a user runs HA without the recorder — a supported
+   configuration, not an error. `after_dependencies: ["recorder"]` only
+   orders setup *when recorder is configured*; it does not guarantee it
+   exists. Check `hass.config.components` first.
+
 ## Roadmap (phases, after shape sign-off)
 
 0. ✅ Scaffold: repo, license, docs, fixture, tool config.
-1. Package skeleton: `api.py` (typed client + dataclass), `coordinator.py`,
+1. ✅ Package skeleton: `api.py` (typed client + dataclass), `coordinator.py`,
    `config_flow.py`, `__init__.py` (`entry.runtime_data`), `manifest.json`,
    `strings.json`; CO₂-only proof-of-wire sensor; api + config-flow tests;
    rate-limit characterization (protocol above) → lock the poll interval.
-2. Full entity set + availability semantics + entity tests; statistics
+2. ✅ Full entity set + availability semantics + entity tests; statistics
    gap-backfill from the `hourly` array (see section above).
-3. Diagnostics, `quality_scale.yaml`, exception/entity translations, icons,
+3. ✅ Diagnostics, `quality_scale.yaml`, exception/entity translations, icons,
    brand assets (in-tree `brand/`, NOT a brands PR), CI (ruff + mypy strict +
-   pytest; `actions/checkout@v5`), HACS + hassfest validation workflows.
-4. Platinum climb: 100% test coverage, reconfigure tests, docs polish,
+   pytest; `actions/checkout` tracks the supported major, v7 as of 0.2.1),
+   HACS + hassfest validation workflows.
+4. ✅ Platinum climb: 100% test coverage, reconfigure tests, docs polish,
    README badges (dynamic shields.io), CHANGELOG discipline, release v0.1.0,
    live cutover (remove REST package → registry cleanup → add entries).
-5. Later/optional: HACS default-registry PR; core-upstream conversation
+5. Later/optional (OPEN): HACS default-registry PR; core-upstream conversation
    (target: `airvisual` cloud integration gaining node-id entries, NOT
    `airvisual_pro` — transport-split precedent).

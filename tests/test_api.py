@@ -266,3 +266,24 @@ async def test_fetch_404_without_error_code(
     aioclient_mock.get(NODE_URL, status=404, json={"message": "Not Found"})
     with pytest.raises(DeviceNotFoundError, match="no error code"):
         await _client(hass).async_get_reading()
+
+
+def test_timestamp_without_zone_is_assumed_utc(
+    node_response_dict: dict[str, Any],
+) -> None:
+    """A zone-less but VALID ts must not produce a naive datetime.
+
+    ``datetime.fromisoformat`` happily parses ``2026-06-10T03:52:07`` into a
+    naive value, which then raises TypeError the moment the availability
+    guard subtracts it from an aware ``utcnow()`` — a crash the defensive
+    parser is supposed to make impossible. The endpoint is documented UTC.
+    """
+    node_response_dict["current"]["ts"] = "2026-06-10T03:52:07"
+    node_response_dict["historical"]["hourly"][0]["ts"] = "2026-06-10T02:00:00"
+    reading = normalise(node_response_dict, rate_limit_remaining=None)
+
+    assert reading.ts == datetime(2026, 6, 10, 3, 52, 7, tzinfo=UTC)
+    assert reading.ts.tzinfo is not None
+    assert all(h.ts.tzinfo is not None for h in reading.hourly)
+    # The comparisons that used to raise now work.
+    assert reading.ts > datetime(2026, 6, 10, tzinfo=UTC)

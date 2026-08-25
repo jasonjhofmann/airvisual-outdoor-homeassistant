@@ -49,8 +49,8 @@ Settings → Devices & Services → **Add Integration** → "AirVisual Outdoor".
 |---|---|
 | Node ID | The unit's 24-hex id. Validated with one live API call. |
 | Name | Device name; defaults to the name the unit reports. **Entity ids derive from this name** — choose it deliberately. |
-| AQI scale | US (EPA, default) or China (MEE). One scale per entry — exactly one AQI sensor and one main-pollutant sensor are created. Switch later via *Reconfigure* (creates fresh entities under the new scale). |
-| MAC address | Optional. If set, HA merges the device with its network (DHCP/UniFi) client entry on one device card. |
+| AQI scale | US (EPA, default) or China (MEE). One scale per entry — exactly one AQI sensor and one main-pollutant sensor are created. Switch later via *Reconfigure*: the new scale's entities are created and the old scale's are removed (so the main-pollutant entity keeps its original entity id rather than gaining a `_2` suffix). Their history does not carry over — the two scales are not comparable. |
+| MAC address | Optional. If set, HA links the device with its network (DHCP/UniFi) client entry. Clearing it via *Reconfigure* removes the link again. |
 
 Multiple monitors = multiple entries, one per node ID. Each node has its own
 API request budget.
@@ -77,10 +77,16 @@ combination).
   the hourly record. Limits (by HA design): statistics only — raw state
   history cannot be backfilled — at hourly granularity, for sensors with an
   hourly source (PM, CO₂, temperature, humidity, pressure; AQI and main
-  pollutant have none).
+  pollutant have none). The most recently completed hour is deliberately
+  left to HA's own recorder, so a just-ended outage is healed on the next
+  hourly pass rather than instantly. Requires the recorder; with it disabled
+  the backfill quietly does nothing.
 - **Staleness**: if the device stops reporting, IQAir's API keeps serving
   the last reading with HTTP 200 indefinitely. Entities go unavailable when
-  the sample is older than 10 minutes.
+  the sample is older than 10 minutes — except **Last updated**, which keeps
+  reporting the timestamp of the final sample so you can see *how* stale the
+  data is (and trigger an "offline for N minutes" automation off it). It
+  goes unavailable only when the poll itself fails.
 - The API exposes no model/firmware metadata, so the device page can't show
   firmware versions.
 
@@ -119,7 +125,8 @@ The integration was built to make a published outdoor monitor a first-class
 - **Entities unavailable, device unreachable in IQAir's app too**: the
   monitor stopped reporting (power/WiFi). The API keeps serving its last
   reading with HTTP 200; entities deliberately go unavailable once the
-  sample is older than 10 minutes.
+  sample is older than 10 minutes. **Last updated** stays available and
+  shows when the last real sample arrived.
 - **Entities unavailable right after setup**: check the log for
   `rate limit` — the node's 30/hour budget may be drained (it is shared by
   every consumer of the node, worldwide). It resets at the top of the hour.
@@ -127,7 +134,8 @@ The integration was built to make a published outdoor monitor a first-class
   without the optional CO₂ module) or the unit omitted the key that cycle.
 - **Hourly statistics have gaps anyway**: the backfill window is 48 h —
   outages longer than that can only be healed while they're still inside
-  the window.
+  the window. The hour that just ended is also skipped by design (HA's own
+  recorder compiles it); give it one more hourly pass before worrying.
 
 ## Removal
 

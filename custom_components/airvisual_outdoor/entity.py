@@ -37,6 +37,10 @@ class AirVisualOutdoorEntity(CoordinatorEntity[AirVisualOutdoorCoordinator]):
             device_info["connections"] = {(CONNECTION_NETWORK_MAC, format_mac(mac))}
         self._attr_device_info = device_info
 
+    #: Subclasses set this from their entity description. A staleness-exempt
+    #: entity reports the age of a dead station instead of hiding it.
+    _staleness_exempt: bool = False
+
     @property
     def available(self) -> bool:
         """Unavailable when polling fails OR the cloud serves a stale sample.
@@ -44,9 +48,18 @@ class AirVisualOutdoorEntity(CoordinatorEntity[AirVisualOutdoorCoordinator]):
         The API keeps answering 200 with the last-known ``current`` block
         after a device stops reporting, so coordinator success alone would
         report a dead station as healthy.
+
+        Staleness-exempt entities are the exception: the "last updated"
+        timestamp is the one reading whose whole job is to make staleness
+        visible, and blanking it exactly when the station dies leaves the
+        user with no way to see HOW stale the data is (or to key an
+        "offline for N minutes" automation off it). It still goes
+        unavailable when the poll itself fails.
         """
         if not super().available:
             return False
+        if self._staleness_exempt:
+            return True
         ts = self.coordinator.data.ts
         if ts is None:
             return False

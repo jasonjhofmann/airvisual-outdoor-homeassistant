@@ -174,3 +174,94 @@ async def test_missing_sample_timestamp_goes_unavailable(
     state = hass.states.get(_co2_entity_id(hass))
     assert state is not None
     assert state.state == STATE_UNAVAILABLE
+
+
+async def test_scale_switch_reclaims_old_entities(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+) -> None:
+    """Switching scale must not leave the old scale's rows in the registry.
+
+    HA keeps a registry row whose entity is no longer added, so before this
+    was handled the user was left with a permanently ``unavailable``
+    ``sensor.<device>_aqi_us`` AND — because the abandoned main-pollutant
+    row still owned the clean slug — a new CN sensor stuck at
+    ``sensor.<device>_main_pollutant_2``.
+    """
+    from custom_components.airvisual_outdoor.const import SCALE_CN
+
+    from .conftest import patch_client
+
+    entry = init_integration
+    ent_reg = er.async_get(hass)
+    assert ent_reg.async_get_entity_id(
+        "sensor", DOMAIN, f"{DOMAIN}_{TEST_NODE_ID}_aqius"
+    )
+
+    result = await entry.start_reconfigure_flow(hass)
+    with patch_client(mock_client):
+        await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_AQI_SCALE: SCALE_CN}
+        )
+        await hass.async_block_till_done()
+
+    # The US rows are gone, not merely unused.
+    for old_key in ("aqius", "mainus"):
+        assert (
+            ent_reg.async_get_entity_id(
+                "sensor", DOMAIN, f"{DOMAIN}_{TEST_NODE_ID}_{old_key}"
+            )
+            is None
+        ), old_key
+
+    # ...so the CN main pollutant gets the clean id, not a "_2" suffix.
+    main_cn = ent_reg.async_get_entity_id(
+        "sensor", DOMAIN, f"{DOMAIN}_{TEST_NODE_ID}_maincn"
+    )
+    assert main_cn == "sensor.backyard_main_pollutant"
+    assert hass.states.get(main_cn).state == "pm10"
+    assert hass.states.get("sensor.backyard_aqi_us") is None
+
+
+async def test_last_updated_survives_a_stale_sample(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    sample_reading: NodeReading,
+) -> None:
+    """The freshness sensor must not blank out exactly when data goes stale.
+
+    Every other entity goes unavailable on a stale sample; the timestamp
+    entity keeps reporting, which is what makes "how old is this?" and
+    "offline for N minutes" answerable at all.
+    """
+    from .conftest import build_mock_client
+
+    # HA's timestamp sensor renders whole seconds.
+    stale_at = (dt_util.utcnow() - STALENESS_THRESHOLD - timedelta(minutes=5)).replace(
+        microsecond=0
+    )
+    client = build_mock_client(replace(sample_reading, ts=stale_at))
+    await setup_integration(hass, mock_config_entry, client)
+
+    assert hass.states.get(_co2_entity_id(hass)).state == STATE_UNAVAILABLE
+    last_updated = hass.states.get("sensor.backyard_last_updated")
+    assert last_updated is not None
+    assert last_updated.state == stale_at.isoformat()
+
+
+async def test_last_updated_unavailable_when_polling_fails(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+) -> None:
+    """Staleness exemption is not a blanket exemption from availability."""
+    from custom_components.airvisual_outdoor.api import TransportError
+
+    coordinator = init_integration.runtime_data
+    mock_client.async_get_reading.side_effect = TransportError("down")
+    await coordinator.async_refresh()
+
+    state = hass.states.get("sensor.backyard_last_updated")
+    assert state is not None
+    assert state.state == STATE_UNAVAILABLE
