@@ -274,11 +274,14 @@ def test_metadata_carries_every_required_key(
 ) -> None:
     """Every key ``StatisticMetaData`` requires is present.
 
-    ``unit_class`` in particular: the recorder reads it unconditionally when
-    the metadata row already exists (``StatisticsMetaManager._update_metadata``
-    does ``new_metadata["unit_class"]``), so omitting it raises KeyError
-    inside the recorder thread — where this integration's own try/except
-    cannot see it, because async_import_statistics only queues the job.
+    ``unit_class`` in particular. HA still tolerates its absence today via a
+    compatibility guard in ``_async_import_statistics``, but
+    ``async_import_statistics`` reports that omission with
+    ``breaks_in_ha_version="2026.11"``; once the guard goes,
+    ``StatisticsMetaManager._update_metadata`` reads
+    ``new_metadata["unit_class"]`` unconditionally and raises KeyError inside
+    the recorder thread — where this integration's own try/except cannot see
+    it, because async_import_statistics only queues the job.
     """
     from custom_components.airvisual_outdoor.statistics import _metadata
 

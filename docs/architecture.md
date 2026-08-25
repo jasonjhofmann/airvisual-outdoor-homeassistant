@@ -227,35 +227,43 @@ against the entity's existing statistics rows; insert only missing hours;
 never overwrite existing rows. Daily/monthly arrays stay unused (HA derives
 longer aggregates from hourly).
 
-#### Recorder contract (ground truth, verified against HA 2026.8 source)
+#### Recorder contract (verified against HA 2026.8.3 and the 2026.7.0 floor)
 
 Three constraints that are NOT obvious from the HA docs and that this
 integration got wrong before 0.2.1. Read these before touching
 `statistics.py`.
 
-1. **`StatisticMetaData["unit_class"]` is REQUIRED, and omitting it fails
-   silently-then-loudly.** On the first import the metadata row does not yet
-   exist and HA takes the `_add_metadata` path, which tolerates the missing
-   key (the column is left NULL). HA's own sensor recorder platform then
-   writes the correct `unit_class` for the same entity. From then on every
-   import takes `StatisticsMetaManager._update_metadata`, which evaluates
-   `new_metadata["unit_class"]` unconditionally and raises
-   `KeyError: 'unit_class'` **inside the recorder thread** — where this
-   integration's `try/except` cannot see it, because `async_import_statistics`
-   only *queues* the job. Net effect before the fix: backfill worked once,
-   then never again, with a recorder traceback each hour.
-   The value must equal what HA derives for the same entity
-   (`homeassistant.components.sensor.recorder._get_unit_class`, i.e.
+1. **`StatisticMetaData["unit_class"]` is required, and omitting it is on a
+   deprecation clock.** It is a REQUIRED key of the TypedDict
+   (`recorder/models/statistics.py` — not `NotRequired`), but omitting it does
+   NOT break today: `_async_import_statistics` carries an explicit
+   compatibility guard — *"we need to guard against custom integrations that
+   have not been updated to set the unit_class"* — that derives it from
+   `unit_of_measurement` via `STATISTIC_UNIT_TO_UNIT_CONVERTER` and mutates
+   the caller's dict before the task is queued. Measured on both 2026.8.3 and
+   the 2026.7.0 floor, that fallback produces exactly the right class for all
+   seven of this integration's units (μg/m³ → `concentration`, ppm →
+   `unitless`, °C → `temperature`, % → `unitless`, Pa → `pressure`), so the
+   pre-0.2.1 code imported correct rows.
+   What it DID cost: `async_import_statistics` calls
+   `report_usage("doesn't specify unit_class …", breaks_in_ha_version="2026.11")`,
+   which for a custom integration logs a WARNING telling the user to file a
+   bug report — once per backfill, hourly, forever — and **the guard goes away
+   in HA 2026.11**, at which point `_update_metadata` reaches
+   `new_metadata["unit_class"]` unconditionally and raises `KeyError` inside
+   the recorder thread, where this integration's `try`/`except` cannot see it
+   (`async_import_statistics` only *queues* the job).
+   So: set it explicitly. The value must equal what HA derives for the same
+   entity (`homeassistant.components.sensor.recorder._get_unit_class`, i.e.
    `UNIT_CONVERTERS[device_class]` falling back to
-   `STATISTIC_UNIT_TO_UNIT_CONVERTER[unit]`), or the import and the sensor
-   platform rewrite each other's metadata row on every compile. For this
-   integration's units: PM2.5/PM10/PM1 (μg/m³) → `concentration`, CO₂ (ppm)
-   → `unitless`, temperature (°C) → `temperature`, humidity (%) →
-   `unitless`, pressure (Pa) → `pressure`. `tests/test_statistics.py`
-   re-derives all seven from HA's own maps so an upstream change fails CI.
-   Corollary: do NOT assemble the metadata as a `dict` + `cast()`. It is a
-   TypedDict with required keys; building it as a literal is what lets
-   mypy --strict catch a missing one. The `cast()` is exactly what hid this.
+   `STATISTIC_UNIT_TO_UNIT_CONVERTER[unit]`) or the import and the sensor
+   platform would rewrite each other's metadata row on every compile;
+   `tests/test_statistics.py` re-derives all seven from HA's own maps so an
+   upstream change fails CI.
+   Corollary, and the reason this was invisible: do NOT assemble the metadata
+   as a `dict` + `cast()`. It is a TypedDict with required keys, and building
+   it as a literal is what lets mypy --strict report
+   `Missing key "unit_class"`. The `cast()` suppressed exactly that.
 
 2. **Never import the hour that just completed.** The recorder compiles its
    own hourly row for hour H shortly after H+1:00 by summarising that hour's

@@ -70,8 +70,8 @@ COMPILE_LAG: Final = timedelta(hours=1)
 class BackfillSource:
     """One sensor whose hourly counterpart can be back-imported.
 
-    ``unit`` and ``device_class`` MUST match the sensor entity's own
-    ``native_unit_of_measurement`` / ``device_class`` in ``sensor.py``: the
+    ``unit`` MUST match the sensor entity's own
+    ``native_unit_of_measurement`` in ``sensor.py``: the
     recorder keys statistics metadata by entity id, so a mismatch here makes
     every import rewrite the row the sensor platform just wrote (and back
     again on the next compile). ``tests/test_statistics.py`` pins the two
@@ -79,11 +79,12 @@ class BackfillSource:
     database.
 
     ``unit_class`` is the recorder's unit-conversion class for that pairing.
-    It is a REQUIRED key of ``StatisticMetaData``; omitting it raises
-    ``KeyError`` inside the recorder thread the moment the metadata row
-    already exists. The values are pinned literally (rather than derived at
-    import time from HA internals) and re-derived from HA's own maps by
-    ``test_unit_class_matches_home_assistant``.
+    It is a REQUIRED key of ``StatisticMetaData``. HA still fills a missing
+    one in from ``unit_of_measurement`` today, but reports the omission with
+    ``breaks_in_ha_version="2026.11"``, so it is set explicitly here. The
+    values are pinned literally rather than derived from HA internals at
+    import time, and ``test_unit_class_matches_home_assistant`` re-derives
+    them from HA's own maps so upstream drift fails CI.
     """
 
     key: str

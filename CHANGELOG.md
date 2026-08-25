@@ -8,33 +8,39 @@ follow [SemVer](https://semver.org/) with a `v` prefix on tags.
 
 ## [0.2.1] - 2026-08-24
 
-Whole-repository review. The headline item is that the statistics
-gap-backfill — the integration's flagship feature — has been silently dead
-after its first successful run on every supported Home Assistant version.
+Whole-repository review. Nothing here is a user-visible regression fix for a
+broken feature — the statistics backfill did work. The most consequential
+item is a dated forward-compatibility break, and the rest are crash paths,
+silent-failure paths and a config-flow UX defect.
 
 ### Fixed
 
-- **Statistics backfill stopped working after the first import.**
-  `StatisticMetaData` requires a `unit_class` key and this integration never
-  set one. The first import takes HA's `_add_metadata` path, which tolerates
-  the omission; HA's own sensor recorder platform then fills the correct
-  value in for the same entity. Every import after that takes
-  `StatisticsMetaManager._update_metadata`, which reads
-  `new_metadata["unit_class"]` unconditionally and raised
-  `KeyError: 'unit_class'` **inside the recorder thread** — where this
-  integration's `try`/`except` could not see it, because
-  `async_import_statistics` only queues the job. Net effect: backfill
-  appeared to work once and then never again, leaving a recorder traceback
-  each hour. Metadata is now built as a `StatisticMetaData` literal with the
-  correct per-sensor `unit_class`, re-derived from HA's own converter maps by
-  a test so an upstream change fails CI rather than a user's database.
-- **The `cast()` that hid it.** The metadata was assembled as a
-  `dict[str, object]` and `cast()` to the TypedDict purely to accommodate a
-  `has_mean` compatibility shim whose own docstring called it "vestigial"
-  (it has been unreachable since the 2026.7.0 floor). The cast is what
-  suppressed the `Missing key "unit_class"` error mypy --strict would
-  otherwise have raised. Shim and cast are both gone, along with the test
-  that existed only to execute the dead branch.
+- **The statistics backfill was on a countdown to break in HA 2026.11.**
+  `StatisticMetaData` requires a `unit_class` key that this integration never
+  set. It kept working only because `_async_import_statistics` carries an
+  explicit compatibility guard — *"we need to guard against custom
+  integrations that have not been updated to set the unit_class"* — which
+  derives the value from `unit_of_measurement` and mutates the caller's dict
+  before the job is queued. Measured on both HA 2026.8.3 and the 2026.7.0
+  floor, that fallback produced exactly the right class for all seven units,
+  so the imported rows were correct. What the omission *did* cost was a
+  `report_usage(..., breaks_in_ha_version="2026.11")` warning on every
+  backfill — hourly, forever, telling the user to file a bug report — and a
+  hard break when the guard is removed in 2026.11, at which point
+  `_update_metadata` reads `new_metadata["unit_class"]` unconditionally and
+  raises `KeyError` **inside the recorder thread**, where this integration's
+  `try`/`except` cannot see it because `async_import_statistics` only queues
+  the job. The metadata now sets it explicitly, with the value re-derived
+  from HA's own converter maps by a test so an upstream change fails CI
+  rather than a user's database.
+- **The `cast()` that hid it, and would have hidden the next one.** The
+  metadata was assembled as a `dict[str, object]` and `cast()` to the
+  TypedDict purely to accommodate a `has_mean` compatibility shim whose own
+  docstring called it "vestigial" (unreachable since the 2026.7.0 floor).
+  That cast is what suppressed the `Missing key "unit_class"` error
+  mypy --strict does report once the dict is built as a literal. Shim and
+  cast are both gone, along with the test that existed only to execute the
+  dead branch.
 - **Backfill fought the recorder for the hour that just ended.** The
   recorder compiles its own hourly row for hour H shortly after H+1:00 with
   a bare INSERT against a unique `(metadata_id, start_ts)` index. Importing
