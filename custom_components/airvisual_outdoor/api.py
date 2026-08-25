@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import aiohttp
@@ -112,8 +113,20 @@ def _pollutant(block: Any) -> PollutantReading:
 
 
 def _number(value: Any) -> float | None:
-    """A float, or None for absent/non-numeric values."""
+    """A float, or None for absent/non-numeric/non-finite values.
+
+    ``json.loads`` accepts the non-standard ``NaN`` / ``Infinity`` literals,
+    and a non-finite value poisons everything downstream: ``_int`` raises
+    ``ValueError``/``OverflowError``, which escapes this module's typed
+    error taxonomy entirely — the config flow, which catches only the typed
+    errors, dies on an unknown-error dead end instead of showing
+    ``cannot_connect``, and a live poll escapes the coordinator's
+    ``except AirVisualOutdoorError`` into its generic handler. Rejecting
+    them here keeps the module's promise to never return partial garbage.
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value):
         return None
     return float(value)
 
@@ -142,13 +155,23 @@ def _header_int(value: str | None) -> int | None:
 
 
 def _timestamp(value: Any) -> datetime | None:
-    """Parse the API's ISO-8601 UTC ``ts``, tolerating absence/garbage."""
+    """Parse the API's ISO-8601 UTC ``ts``, tolerating absence/garbage.
+
+    Always returns an AWARE datetime. A syntactically valid but zone-less
+    stamp (``2026-06-10T03:52:07``) parses fine and would otherwise poison
+    every consumer: the availability guard subtracts it from an aware
+    ``utcnow()`` and the backfill compares it against an aware window, both
+    of which raise ``TypeError`` on naive/aware mixing. The endpoint is
+    documented UTC, so a missing designator is assumed UTC rather than
+    discarded.
+    """
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def _hourly(payload: dict[str, Any]) -> tuple[HourlyReading, ...]:
@@ -212,6 +235,7 @@ class AirVisualOutdoorClient:
         """Store the shared session and the node this client polls."""
         self._session = session
         self.node_id = node_id
+        self._warned_low_budget = False
 
     async def async_get_reading(self) -> NodeReading:
         """Fetch and normalise the node's current readings.
@@ -246,10 +270,32 @@ class AirVisualOutdoorClient:
         if not isinstance(payload, dict):
             raise ParseError("node API returned non-object JSON")
 
-        if remaining is not None and remaining <= 2:
-            _LOGGER.warning(
-                "Node %s rate-limit budget nearly exhausted (%s requests left)",
+        # Edge-triggered, like every other repeat-state log here: without the
+        # flag this fires on every successful poll for as long as the budget
+        # stays low, which is the whole rest of the clock hour.
+        if remaining is not None:
+            if remaining <= 2 and not self._warned_low_budget:
+                self._warned_low_budget = True
+                _LOGGER.warning(
+                    "Node %s rate-limit budget nearly exhausted (%s requests"
+                    " left); it resets at the top of the hour",
+                    self.node_id,
+                    remaining,
+                )
+            elif remaining > 2:
+                self._warned_low_budget = False
+        # KEY SET only, never values: the whole design problem here is
+        # hot-pluggable modules whose keys appear and disappear, and a
+        # "sensor reads unknown" report is unanswerable without knowing
+        # which keys the node actually sent that cycle.
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            current = payload.get("current")
+            _LOGGER.debug(
+                "Node %s payload: current keys=%s, hourly entries=%d,"
+                " budget remaining=%s",
                 self.node_id,
+                sorted(current) if isinstance(current, dict) else None,
+                len(_hourly(payload)),
                 remaining,
             )
         return normalise(payload, remaining)

@@ -5,6 +5,16 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: nothing here writes to the repo.
+permissions:
+  contents: read
+
+# A PR that gets three pushes in a minute should run these four gates once,
+# not three times.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
@@ -16,17 +26,17 @@ jobs:
 
       - name: Ruff (lint)
         run: |
-          uv run --python 3.14 --with ruff \
+          uv run --python '>=3.14.2' --with ruff \
             ruff check custom_components/ tests/
 
       - name: Ruff (format check)
         run: |
-          uv run --python 3.14 --with ruff \
+          uv run --python '>=3.14.2' --with ruff \
             ruff format --check custom_components/ tests/
 
       - name: Mypy (strict)
         run: |
-          uv run --python 3.14 \
+          uv run --python '>=3.14.2' \
             --with mypy \
             --with homeassistant \
             --with aiohttp \
@@ -35,10 +45,54 @@ jobs:
 
       - name: Pytest (with coverage gate)
         run: |
-          uv run --python 3.14 \
+          uv run --python '>=3.14.2' \
             --with pytest-homeassistant-custom-component \
             --with pytest-cov \
             python -m pytest tests/ -v \
               --cov=custom_components.airvisual_outdoor \
               --cov-report=term-missing \
               --cov-fail-under=100
+
+  # The four gates above always resolve the LATEST Home Assistant, so the
+  # 2026.7.0 floor declared in hacs.json and the README was never actually
+  # exercised: code could start depending on a 2026.8-only API and CI would
+  # stay green while HACS happily offered the release to a 2026.7 user.
+  # Import + type-check against the floor itself.
+  minimum-supported-ha:
+    name: Minimum supported HA (2026.7.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Read the declared floor from hacs.json
+        id: floor
+        run: |
+          floor=$(python3 -c "import json;print(json.load(open('hacs.json'))['homeassistant'])")
+          echo "version=$floor" >> "$GITHUB_OUTPUT"
+          echo "Declared Home Assistant floor: $floor"
+
+      - name: Import every module against the floor
+        run: |
+          uv run --python '>=3.14.2' \
+            --with "homeassistant==${{ steps.floor.outputs.version }}" \
+            python -c "
+          import importlib
+          for name in (
+              'api', 'const', 'coordinator', 'entity', 'sensor',
+              'config_flow', 'diagnostics', 'statistics', '__init__',
+          ):
+              importlib.import_module(f'custom_components.airvisual_outdoor.{name}')
+          print('all modules import on the declared floor')
+          "
+
+      - name: Mypy (strict) against the floor
+        run: |
+          uv run --python '>=3.14.2' \
+            --with mypy \
+            --with "homeassistant==${{ steps.floor.outputs.version }}" \
+            --with aiohttp \
+            --with voluptuous \
+            mypy custom_components/airvisual_outdoor/

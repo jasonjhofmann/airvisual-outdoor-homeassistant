@@ -25,9 +25,15 @@ rules:
   docs-actions:
     status: exempt
     comment: No service actions to document.
+  docs-conditions:
+    status: exempt
+    comment: This integration does not provide any conditions.
   docs-high-level-description: done
   docs-installation-instructions: done
   docs-removal-instructions: done
+  docs-triggers:
+    status: exempt
+    comment: This integration does not provide any triggers.
   entity-event-setup:
     status: exempt
     comment: No event subscriptions; all data flow is via DataUpdateCoordinator.
@@ -51,17 +57,30 @@ rules:
       Coordinator failure marks entities unavailable, plus an entity-level
       staleness guard on the payload's own sample timestamp (the cloud keeps
       serving a dead station's last reading with HTTP 200 indefinitely).
+      The "last updated" timestamp entity is exempt from the staleness half
+      of that guard on purpose: it is the entity whose job is to report how
+      old the data is, so blanking it exactly when the station dies removes
+      the only signal the user has. It still follows coordinator failure.
   integration-owner: done
   log-when-unavailable:
     status: done
-    comment: DataUpdateCoordinator logs once on failure and once on recovery.
+    comment: >-
+      DataUpdateCoordinator logs once on failure and once on recovery. The
+      rate-limited branch deliberately keeps last_update_success True (so
+      entities do not blip on a third-party drain), which bypasses that
+      built-in suppression, so coordinator.py edge-triggers its own
+      drain/recovery pair rather than warning on all 12 polls an hour.
   parallel-updates: done
   reauthentication-flow:
     status: exempt
     comment: The node API is keyless; there are no credentials to refresh.
   test-coverage:
     status: done
-    comment: 100% line coverage, enforced by the CI gate.
+    comment: >-
+      100% line coverage, enforced by the CI gate, plus contract tests that
+      line coverage cannot express: the recorder statistics-metadata keys,
+      unit_class re-derived from HA's own converter maps, and the
+      strings.json/translations parity CONTRIBUTING requires.
 
   # Gold
   devices: done

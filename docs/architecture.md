@@ -59,9 +59,10 @@ Responses carry `x-ratelimit-limit: 30` / `x-ratelimit-remaining: N`
 - **The bucket is keyed per node id (per URL path), not per IP alone** —
   requests for a bogus node id ran against their own fresh 30-budget while
   the real node's bucket sat 6 lower. A second monitor therefore gets its
-  own budget; what DOES share one bucket is every consumer of the *same*
-  node behind the same IP (e.g. a YAML `rest:` package polling alongside
-  this integration during cutover).
+  own budget. (The first pass read this as "shared by consumers of the same
+  node *behind the same IP*". That qualifier was wrong and the 2026-06-10
+  re-probe below supersedes it: the bucket is shared GLOBALLY across every
+  client IP.)
 - Valid GETs decrement 1:1; 404s decrement too (their own path's bucket).
 - **Window: fixed calendar hour, full reset at :00 UTC** — CONFIRMED across
   four consecutive boundaries (04:00–07:00Z, 3 h of 10-min sampling on an
@@ -86,11 +87,16 @@ Responses carry `x-ratelimit-limit: 30` / `x-ratelimit-remaining: N`
   header**. Recovery = the next :00 UTC reset; there is nothing to honor
   beyond waiting, so the coordinator's normal retry cadence is the correct
   backoff.
-- Phase 3 refinement (noted): on `RateLimitError` the coordinator currently
-  fails the cycle, marking entities unavailable until a poll succeeds. A
-  third-party drain of a published node could therefore blip entities
-  unavailable for up to ~an hour. Consider keeping last-known data on 429
-  (the `ts` staleness guard already protects against serving dead data).
+- **429 handling (SHIPPED in 0.1.0, was "Phase 3 refinement")**: the
+  coordinator no longer fails the cycle on `RateLimitError`. It keeps the
+  last reading and leaves `last_update_success` True, because a third-party
+  drain of a published node would otherwise blip entities unavailable for up
+  to an hour; the `ts` staleness guard owns availability instead. Because
+  that branch keeps the cycle "successful", it also bypasses
+  DataUpdateCoordinator's own once-per-episode log suppression, so the
+  drain/recovery warning is edge-triggered by hand in `coordinator.py`.
+  With no prior reading there is nothing to keep, so the first fetch still
+  fails into `SETUP_RETRY`.
 
 **Poll interval: LOCKED at 300 s** (12 req/h/node, 60% headroom; matches the
 legacy REST package's cadence, and even brief co-polling during cutover fits:
@@ -98,7 +104,8 @@ legacy REST package's cadence, and even brief co-polling during cutover fits:
 the Phase 2 deploy (a const change needs the restart Phase 2 forces anyway).
 
 Consequences for the design:
-- One coordinator **per node** but a polite default interval (see Decisions).
+- One coordinator **per node** but a polite default interval (see
+  "Poll interval: LOCKED at 300 s" above).
 - Client must surface `x-ratelimit-remaining` (diagnostics) and handle 429
   with backoff if it ever appears.
 
@@ -134,7 +141,7 @@ If this integration is ever upstreamed to HA core, core's library-first rule
 applies and the client extracts mechanically into a tiny PyPI package
 (or lands as a pyairvisual contribution) at that point — see Roadmap.
 
-## Proposed shape (PENDING DISCUSSION — see open questions)
+## Integration shape (SHIPPED — settled 2026-06-09/10, see open questions)
 
 - **Domain**: `airvisual_outdoor`, display name "AirVisual Outdoor".
 - **Entry topology**: one config entry per node. No account/hub entry and no
@@ -205,7 +212,13 @@ statistics gap-backfill — deferred to Phase 2**, see below.)
 ### Statistics gap-backfill (Phase 2 feature, decided 2026-06-09)
 
 Every poll carries the device's own history (`instant` ~60×1-min, `hourly`
-48 h, `daily` 30 d, `monthly` 12 mo). Instead of discarding it, Phase 2
+48 h, `daily` 30 d, `monthly` 12 mo). An `hourly[i]` entry does NOT have the
+same shape as the `current` block documented above: `pm25`/`pm10` are still
+`{conc, aqius, aqicn}` objects, but **`pm1` is a flat number**, and there is
+no composite `aqius`/`aqicn` or `mainus`/`maincn` — which is why the
+backfill covers PM/CO₂/temperature/humidity/pressure but not AQI or main
+pollutant. Entry timestamps are on the top of the hour (see the recorder
+contract below for why that matters). Instead of discarding it, Phase 2
 back-injects missed hours into HA **long-term statistics** via the
 external/import-statistics machinery, so HA downtime never leaves permanent
 holes in the hourly mean/min/max record. Scope limits (by HA design, restate
@@ -216,21 +229,93 @@ against the entity's existing statistics rows; insert only missing hours;
 never overwrite existing rows. Daily/monthly arrays stay unused (HA derives
 longer aggregates from hourly).
 
+#### Recorder contract (verified against HA 2026.8.3 and the 2026.7.0 floor)
+
+Three constraints that are NOT obvious from the HA docs and that this
+integration got wrong before 0.2.1. Read these before touching
+`statistics.py`.
+
+1. **`StatisticMetaData["unit_class"]` is required, and omitting it is on a
+   deprecation clock.** It is a REQUIRED key of the TypedDict
+   (`recorder/models/statistics.py` — not `NotRequired`), but omitting it does
+   NOT break today: `_async_import_statistics` carries an explicit
+   compatibility guard — *"we need to guard against custom integrations that
+   have not been updated to set the unit_class"* — that derives it from
+   `unit_of_measurement` via `STATISTIC_UNIT_TO_UNIT_CONVERTER` and mutates
+   the caller's dict before the task is queued. Measured on both 2026.8.3 and
+   the 2026.7.0 floor, that fallback produces exactly the right class for all
+   seven of this integration's units (μg/m³ → `concentration`, ppm →
+   `unitless`, °C → `temperature`, % → `unitless`, Pa → `pressure`), so the
+   pre-0.2.1 code imported correct rows.
+   What it DID cost: `async_import_statistics` calls
+   `report_usage("doesn't specify unit_class …", breaks_in_ha_version="2026.11")`,
+   which for a custom integration logs a WARNING telling the user to file a
+   bug report — once per backfill, hourly, forever — and **the guard goes away
+   in HA 2026.11**, at which point `_update_metadata` reaches
+   `new_metadata["unit_class"]` unconditionally and raises `KeyError` inside
+   the recorder thread, where this integration's `try`/`except` cannot see it
+   (`async_import_statistics` only *queues* the job).
+   So: set it explicitly. The value must equal what HA derives for the same
+   entity (`homeassistant.components.sensor.recorder._get_unit_class`, i.e.
+   `UNIT_CONVERTERS[device_class]` falling back to
+   `STATISTIC_UNIT_TO_UNIT_CONVERTER[unit]`) or the import and the sensor
+   platform would rewrite each other's metadata row on every compile;
+   `tests/test_statistics.py` re-derives all seven from HA's own maps so an
+   upstream change fails CI.
+   Corollary, and the reason this was invisible: do NOT assemble the metadata
+   as a `dict` + `cast()`. It is a TypedDict with required keys, and building
+   it as a literal is what lets mypy --strict report
+   `Missing key "unit_class"`. The `cast()` suppressed exactly that.
+
+2. **Never import the hour that just completed.** The recorder compiles its
+   own hourly row for hour H shortly after H+1:00 by summarising that hour's
+   short-term statistics, and `_compile_hourly_statistics` does a bare
+   `session.add_all()` against a UNIQUE `(metadata_id, start_ts)` index.
+   Importing H first makes that INSERT collide; `session_scope`'s
+   `filter_unique_constraint_integrity_error` swallows it but logs
+   *"Blocked attempt to insert duplicated statistic rows, please report at
+   <core issue tracker>"* and rolls back the whole compile period — i.e. a
+   custom integration's bug that reads to the user as a core bug. Hence
+   `COMPILE_LAG`. Skipping one hour costs nothing: if HA was up for hour H
+   the recorder has the states and produces a *better* (min/mean/max) row
+   itself, and if HA was down there are no short-term rows to collide with
+   and the next pass imports it, still well inside the 48 h window.
+
+3. **Row starts are validated synchronously, and one bad row rejects the
+   whole call.** `async_import_statistics` delegates to
+   `_async_import_statistics`, which raises `HomeAssistantError` for a naive
+   timestamp ("Naive timestamp: no or invalid timezone info provided") and
+   for any start that is not exactly on the hour ("Invalid timestamp:
+   timestamps must be from the top of the hour"). Both checks run over
+   EVERY row before anything is queued, so a single off-hour entry in the
+   API's `hourly` array would take the backfill down for all seven sensors,
+   every hour, for as long as the API kept sending it. `statistics.py`
+   therefore drops non-aligned entries (with a warning) rather than passing
+   them through, and `api.py` guarantees aware timestamps upstream.
+
+4. **The recorder may not be set up at all.** `get_instance()` is a bare
+   `hass.data[DATA_INSTANCE]` lookup, so it raises `KeyError` rather than
+   returning None when a user runs HA without the recorder — a supported
+   configuration, not an error. `after_dependencies: ["recorder"]` only
+   orders setup *when recorder is configured*; it does not guarantee it
+   exists. Check `hass.config.components` first.
+
 ## Roadmap (phases, after shape sign-off)
 
 0. ✅ Scaffold: repo, license, docs, fixture, tool config.
-1. Package skeleton: `api.py` (typed client + dataclass), `coordinator.py`,
+1. ✅ Package skeleton: `api.py` (typed client + dataclass), `coordinator.py`,
    `config_flow.py`, `__init__.py` (`entry.runtime_data`), `manifest.json`,
    `strings.json`; CO₂-only proof-of-wire sensor; api + config-flow tests;
    rate-limit characterization (protocol above) → lock the poll interval.
-2. Full entity set + availability semantics + entity tests; statistics
+2. ✅ Full entity set + availability semantics + entity tests; statistics
    gap-backfill from the `hourly` array (see section above).
-3. Diagnostics, `quality_scale.yaml`, exception/entity translations, icons,
+3. ✅ Diagnostics, `quality_scale.yaml`, exception/entity translations, icons,
    brand assets (in-tree `brand/`, NOT a brands PR), CI (ruff + mypy strict +
-   pytest; `actions/checkout@v5`), HACS + hassfest validation workflows.
-4. Platinum climb: 100% test coverage, reconfigure tests, docs polish,
+   pytest; `actions/checkout` tracks the supported major, v7 as of 0.2.1),
+   HACS + hassfest validation workflows.
+4. ✅ Platinum climb: 100% test coverage, reconfigure tests, docs polish,
    README badges (dynamic shields.io), CHANGELOG discipline, release v0.1.0,
    live cutover (remove REST package → registry cleanup → add entries).
-5. Later/optional: HACS default-registry PR; core-upstream conversation
+5. Later/optional (OPEN): HACS default-registry PR; core-upstream conversation
    (target: `airvisual` cloud integration gaining node-id entries, NOT
    `airvisual_pro` — transport-split precedent).

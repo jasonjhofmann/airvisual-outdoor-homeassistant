@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import MagicMock
 
+import pytest
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -67,3 +69,108 @@ async def test_transport_error_marks_unavailable(
     state = hass.states.get("sensor.backyard_co2")
     assert state is not None
     assert state.state == STATE_UNAVAILABLE
+
+
+async def test_rate_limit_warning_is_edge_triggered(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The drained-budget warning logs once per episode, not once per poll.
+
+    The keep-last-reading branch deliberately holds ``last_update_success``
+    True, which bypasses DataUpdateCoordinator's own once-per-episode log
+    suppression. Without an explicit edge trigger a third-party drain emits
+    12 identical warnings an hour for as long as it lasts.
+    """
+    coordinator = init_integration.runtime_data
+
+    mock_client.async_get_reading.side_effect = RateLimitError("drained")
+    caplog.clear()
+    for _ in range(4):
+        await coordinator.async_refresh()
+    assert caplog.text.count("request budget exhausted") == 1
+
+    # ...and one line on recovery, so the episode has a visible end.
+    mock_client.async_get_reading.side_effect = None
+    caplog.clear()
+    await coordinator.async_refresh()
+    assert caplog.text.count("request budget recovered") == 1
+
+    # A second episode logs again.
+    mock_client.async_get_reading.side_effect = RateLimitError("drained again")
+    caplog.clear()
+    await coordinator.async_refresh()
+    assert caplog.text.count("request budget exhausted") == 1
+
+
+async def test_stale_sample_is_logged_once_with_the_reason(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A dead station must not go unavailable in silence.
+
+    It is the one failure mode that logs nothing anywhere: the cloud answers
+    200, the coordinator succeeds, and the entity-level guard quietly blanks
+    every entity. The user is left with a device full of `unavailable` and an
+    empty log.
+    """
+    from dataclasses import replace
+
+    from homeassistant.util import dt as dt_util
+
+    coordinator = init_integration.runtime_data
+    fresh = coordinator.data
+    stale = replace(fresh, ts=dt_util.utcnow() - timedelta(minutes=30))
+
+    mock_client.async_get_reading.return_value = stale
+    caplog.clear()
+    for _ in range(3):
+        await coordinator.async_refresh()
+    assert caplog.text.count("is serving a stale sample") == 1
+    assert "stopped reporting" in caplog.text
+
+    mock_client.async_get_reading.return_value = replace(fresh, ts=dt_util.utcnow())
+    caplog.clear()
+    await coordinator.async_refresh()
+    assert caplog.text.count("reporting fresh samples again") == 1
+
+
+async def test_unload_entry_tears_down_cleanly(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Explicit unload coverage: the entry unloads and its entities go away."""
+    from homeassistant.config_entries import ConfigEntryState
+
+    assert hass.states.get("sensor.backyard_co2") is not None
+
+    assert await hass.config_entries.async_unload(init_integration.entry_id)
+    await hass.async_block_till_done()
+
+    assert init_integration.state is ConfigEntryState.NOT_LOADED
+    assert hass.states.get("sensor.backyard_co2").state == STATE_UNAVAILABLE
+
+
+async def test_future_timestamp_logs_the_clock_possibility(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The staleness guard is absolute, so the message must not say 'older'."""
+    from dataclasses import replace
+
+    from homeassistant.util import dt as dt_util
+
+    coordinator = init_integration.runtime_data
+    ahead = replace(coordinator.data, ts=dt_util.utcnow() + timedelta(hours=6))
+    mock_client.async_get_reading.return_value = ahead
+    caplog.clear()
+    await coordinator.async_refresh()
+
+    assert "more than" in caplog.text
+    assert "clock is wrong" in caplog.text
+    assert "older than" not in caplog.text

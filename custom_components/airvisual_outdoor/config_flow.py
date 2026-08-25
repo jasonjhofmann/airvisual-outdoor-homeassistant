@@ -109,7 +109,15 @@ class AirVisualOutdoorConfigFlow(ConfigFlow, domain=DOMAIN):
                     reading = await self._validate(node_id)
                 except DeviceNotFoundError:
                     errors[CONF_NODE_ID] = "device_not_found"
-                except (TransportError, RateLimitError, ParseError) as err:
+                except RateLimitError as err:
+                    # Distinct from cannot_connect: the node id is fine and
+                    # the network is fine, the shared hourly budget is spent.
+                    # "Check connectivity and try again" sends the user
+                    # debugging the wrong thing, and retrying immediately is
+                    # the one action guaranteed not to work.
+                    _LOGGER.warning("Node API validation rate-limited: %s", err)
+                    errors["base"] = "rate_limited"
+                except (TransportError, ParseError) as err:
                     _LOGGER.warning("Node API validation failed: %s", err)
                     errors["base"] = "cannot_connect"
                 else:
@@ -126,9 +134,14 @@ class AirVisualOutdoorConfigFlow(ConfigFlow, domain=DOMAIN):
                         data[CONF_MAC] = format_mac(mac_raw)
                     return self.async_create_entry(title=name, data=data)
 
+        # Re-showing the bare schema would blank every field the user just
+        # filled in — including a 24-character hex node id they would have to
+        # retype in full to fix a typo'd MAC. Feed their input back in.
         return self.async_show_form(
             step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
+            data_schema=self.add_suggested_values_to_schema(
+                STEP_USER_DATA_SCHEMA, dict(user_input or {})
+            ),
             errors=errors,
         )
 
@@ -157,10 +170,15 @@ class AirVisualOutdoorConfigFlow(ConfigFlow, domain=DOMAIN):
                     data[CONF_MAC] = format_mac(mac_raw)
                 return self.async_update_reload_and_abort(existing, data=data)
 
-        suggested = {
+        # On a validation error, prefer what the user just submitted over the
+        # stored values — otherwise their scale choice silently reverts in a
+        # control they had already changed.
+        suggested: dict[str, Any] = {
             CONF_AQI_SCALE: existing.data[CONF_AQI_SCALE],
             CONF_MAC: existing.data.get(CONF_MAC, ""),
         }
+        if user_input is not None:
+            suggested |= dict(user_input)
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=self.add_suggested_values_to_schema(

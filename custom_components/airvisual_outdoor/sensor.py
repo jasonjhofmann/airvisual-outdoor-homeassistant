@@ -28,6 +28,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
@@ -45,6 +46,9 @@ class AirVisualOutdoorSensorDescription(SensorEntityDescription):
 
     value_fn: Callable[[NodeReading], StateType | datetime]
     scale: str | None = None  # None = scale-independent, always created
+    # Staleness-exempt entities stay available on a stale sample; see
+    # AirVisualOutdoorEntity.available.
+    staleness_exempt: bool = False
 
 
 SENSORS: tuple[AirVisualOutdoorSensorDescription, ...] = (
@@ -137,6 +141,7 @@ SENSORS: tuple[AirVisualOutdoorSensorDescription, ...] = (
         translation_key="last_updated",
         device_class=SensorDeviceClass.TIMESTAMP,
         value_fn=lambda reading: reading.ts,
+        staleness_exempt=True,
     ),
 )
 
@@ -149,11 +154,31 @@ async def async_setup_entry(
     """Wire the node's sensors for the entry's AQI scale."""
     coordinator = entry.runtime_data
     scale: str = entry.data[CONF_AQI_SCALE]
+    _drop_other_scale_entities(hass, coordinator.client.node_id, scale)
     async_add_entities(
         AirVisualOutdoorSensor(coordinator, description)
         for description in SENSORS
         if description.scale in (None, scale)
     )
+
+
+def _drop_other_scale_entities(hass: HomeAssistant, node_id: str, scale: str) -> None:
+    """Remove registry rows left behind by a previous AQI-scale choice.
+
+    Switching scale in the reconfigure flow stops creating the old scale's
+    AQI / main-pollutant entities, but HA keeps their registry rows: the
+    user is left with permanently ``unavailable`` entities, and — worse —
+    the abandoned main-pollutant row still owns the clean
+    ``sensor.<device>_main_pollutant`` id, so the new scale's sensor is
+    forced to ``..._main_pollutant_2``. Reclaim both before adding entities.
+    """
+    ent_reg = er.async_get(hass)
+    for description in SENSORS:
+        if description.scale in (None, scale):
+            continue
+        unique_id = f"{DOMAIN}_{node_id}_{description.key}"
+        if entity_id := ent_reg.async_get_entity_id("sensor", DOMAIN, unique_id):
+            ent_reg.async_remove(entity_id)
 
 
 class AirVisualOutdoorSensor(AirVisualOutdoorEntity, SensorEntity):
@@ -169,6 +194,7 @@ class AirVisualOutdoorSensor(AirVisualOutdoorEntity, SensorEntity):
         """Bind the description and build the registry unique_id."""
         super().__init__(coordinator)
         self.entity_description = description
+        self._staleness_exempt = description.staleness_exempt
         node_id = coordinator.client.node_id
         self._attr_unique_id = f"{DOMAIN}_{node_id}_{description.key}"
 

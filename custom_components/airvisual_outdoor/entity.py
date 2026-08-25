@@ -8,16 +8,18 @@ from homeassistant.helpers.device_registry import (
     format_mac,
 )
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
-from .const import CONF_MAC, DOMAIN, STALENESS_THRESHOLD
-from .coordinator import AirVisualOutdoorCoordinator
+from .const import CONF_MAC, DOMAIN
+from .coordinator import AirVisualOutdoorCoordinator, sample_is_stale
 
 
 class AirVisualOutdoorEntity(CoordinatorEntity[AirVisualOutdoorCoordinator]):
     """Base entity bound to the node's device entry."""
 
     _attr_has_entity_name = True
+    #: Subclasses set this from their entity description. A staleness-exempt
+    #: entity reports the age of a dead station instead of hiding it.
+    _staleness_exempt: bool = False
 
     def __init__(self, coordinator: AirVisualOutdoorCoordinator) -> None:
         """Register against the per-node device."""
@@ -44,10 +46,16 @@ class AirVisualOutdoorEntity(CoordinatorEntity[AirVisualOutdoorCoordinator]):
         The API keeps answering 200 with the last-known ``current`` block
         after a device stops reporting, so coordinator success alone would
         report a dead station as healthy.
+
+        Staleness-exempt entities are the exception: the "last updated"
+        timestamp is the one reading whose whole job is to make staleness
+        visible, and blanking it exactly when the station dies leaves the
+        user with no way to see HOW stale the data is (or to key an
+        "offline for N minutes" automation off it). It still goes
+        unavailable when the poll itself fails.
         """
         if not super().available:
             return False
-        ts = self.coordinator.data.ts
-        if ts is None:
-            return False
-        return dt_util.utcnow() - ts <= STALENESS_THRESHOLD
+        if self._staleness_exempt:
+            return True
+        return not sample_is_stale(self.coordinator.data)

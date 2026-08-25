@@ -208,3 +208,94 @@ async def test_reconfigure_flow_sets_new_mac(
         await hass.async_block_till_done()
     assert result["type"] is FlowResultType.ABORT
     assert entry.data[CONF_MAC] == "11:22:33:44:55:66"
+
+
+async def test_user_flow_error_keeps_what_was_typed(
+    hass: HomeAssistant, mock_client: MagicMock
+) -> None:
+    """A rejected form must come back filled in, not blank.
+
+    The node id is 24 hex characters; re-showing the bare schema meant a
+    typo'd MAC cost the user every other field as well.
+    """
+    flow_id = await _start_user_flow(hass)
+    with patch_client(mock_client):
+        result = await hass.config_entries.flow.async_configure(
+            flow_id,
+            {
+                CONF_NODE_ID: TEST_NODE_ID,
+                CONF_NAME: "Backyard",
+                CONF_AQI_SCALE: SCALE_CN,
+                CONF_MAC: "not-a-mac",
+            },
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_MAC: "invalid_mac"}
+
+    suggested = {
+        str(key.schema): key.description["suggested_value"]
+        for key in result["data_schema"].schema
+        if isinstance(key.description, dict) and "suggested_value" in key.description
+    }
+    assert suggested[CONF_NODE_ID] == TEST_NODE_ID
+    assert suggested[CONF_NAME] == "Backyard"
+    assert suggested[CONF_AQI_SCALE] == SCALE_CN
+    assert suggested[CONF_MAC] == "not-a-mac"
+
+
+async def test_reconfigure_error_keeps_the_new_scale(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """A rejected reconfigure must not revert the scale the user just picked."""
+    result = await init_integration.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_AQI_SCALE: SCALE_CN, CONF_MAC: "garbage"},
+    )
+    assert result["errors"] == {CONF_MAC: "invalid_mac"}
+
+    suggested = {
+        str(key.schema): key.description["suggested_value"]
+        for key in result["data_schema"].schema
+        if isinstance(key.description, dict) and "suggested_value" in key.description
+    }
+    # SCALE_CN, not the stored SCALE_US.
+    assert suggested[CONF_AQI_SCALE] == SCALE_CN
+    assert suggested[CONF_MAC] == "garbage"
+
+
+async def test_user_flow_rate_limited_is_its_own_error(
+    hass: HomeAssistant, mock_client: MagicMock
+) -> None:
+    """A spent budget is not a connectivity problem.
+
+    All three of TransportError / RateLimitError / ParseError used to collapse
+    into `cannot_connect` ("Check connectivity and try again"), which sends
+    the user debugging the wrong thing and recommends the one action
+    guaranteed not to work.
+    """
+    from custom_components.airvisual_outdoor.api import RateLimitError
+
+    mock_client.async_get_reading.side_effect = RateLimitError("drained")
+    flow_id = await _start_user_flow(hass)
+    with patch_client(mock_client):
+        result = await hass.config_entries.flow.async_configure(
+            flow_id, {CONF_NODE_ID: TEST_NODE_ID, CONF_AQI_SCALE: SCALE_US}
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "rate_limited"}
+
+
+async def test_user_flow_parse_error_is_cannot_connect(
+    hass: HomeAssistant, mock_client: MagicMock
+) -> None:
+    """The third arm of the old combined except clause was never exercised."""
+    from custom_components.airvisual_outdoor.api import ParseError
+
+    mock_client.async_get_reading.side_effect = ParseError("html challenge wall")
+    flow_id = await _start_user_flow(hass)
+    with patch_client(mock_client):
+        result = await hass.config_entries.flow.async_configure(
+            flow_id, {CONF_NODE_ID: TEST_NODE_ID, CONF_AQI_SCALE: SCALE_US}
+        )
+    assert result["errors"] == {"base": "cannot_connect"}
