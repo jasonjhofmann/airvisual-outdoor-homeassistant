@@ -127,9 +127,16 @@ The integration was built to make a published outdoor monitor a first-class
   reading with HTTP 200; entities deliberately go unavailable once the
   sample is older than 10 minutes. **Last updated** stays available and
   shows when the last real sample arrived.
-- **Entities unavailable right after setup**: check the log for
-  `rate limit` — the node's 30/hour budget may be drained (it is shared by
-  every consumer of the node, worldwide). It resets at the top of the hour.
+- **Setup fails with "hourly request budget is already spent"**: the node's
+  30/hour budget is drained. It is shared by every consumer of the node
+  worldwide, so someone else may have spent it. It resets at the top of the
+  hour — waiting is the only fix; retrying immediately cannot work.
+- **Entities unavailable and you want to know why**: grep the log for
+  `budget` (the drain and recovery are each logged once per episode) or
+  `stale sample` (the station stopped reporting). Both appear under
+  `custom_components.airvisual_outdoor`. The integration's *Download
+  diagnostics* also reports `last_exception`, `sample_age_seconds` and
+  `sample_is_stale`, which distinguish a failed poll from a dead station.
 - **A sensor reads "unknown"**: that module isn't installed (e.g. CO₂
   without the optional CO₂ module) or the unit omitted the key that cycle.
 - **Hourly statistics have gaps anyway**: the backfill window is 48 h —

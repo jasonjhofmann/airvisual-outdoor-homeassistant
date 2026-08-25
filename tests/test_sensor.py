@@ -261,3 +261,23 @@ async def test_last_updated_unavailable_when_polling_fails(
     state = hass.states.get("sensor.backyard_last_updated")
     assert state is not None
     assert state.state == STATE_UNAVAILABLE
+
+
+async def test_future_timestamp_is_not_treated_as_fresh(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    sample_reading: NodeReading,
+) -> None:
+    """A sample stamped in the FUTURE is not freshness.
+
+    A device with a skewed clock satisfies `now - ts <= threshold` forever,
+    which would pin every entity "available" on data that never updates.
+    """
+    from .conftest import build_mock_client
+
+    ahead = replace(sample_reading, ts=dt_util.utcnow() + timedelta(days=3))
+    await setup_integration(hass, mock_config_entry, build_mock_client(ahead))
+
+    state = hass.states.get(_co2_entity_id(hass))
+    assert state is not None
+    assert state.state == STATE_UNAVAILABLE

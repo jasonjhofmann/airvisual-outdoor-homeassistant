@@ -109,7 +109,15 @@ class AirVisualOutdoorConfigFlow(ConfigFlow, domain=DOMAIN):
                     reading = await self._validate(node_id)
                 except DeviceNotFoundError:
                     errors[CONF_NODE_ID] = "device_not_found"
-                except (TransportError, RateLimitError, ParseError) as err:
+                except RateLimitError as err:
+                    # Distinct from cannot_connect: the node id is fine and
+                    # the network is fine, the shared hourly budget is spent.
+                    # "Check connectivity and try again" sends the user
+                    # debugging the wrong thing, and retrying immediately is
+                    # the one action guaranteed not to work.
+                    _LOGGER.warning("Node API validation rate-limited: %s", err)
+                    errors["base"] = "rate_limited"
+                except (TransportError, ParseError) as err:
                     _LOGGER.warning("Node API validation failed: %s", err)
                     errors["base"] = "cannot_connect"
                 else:

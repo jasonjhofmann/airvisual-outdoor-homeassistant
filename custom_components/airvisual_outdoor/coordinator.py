@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -32,7 +33,11 @@ def sample_is_stale(reading: NodeReading | None) -> bool:
     """
     if reading is None or reading.ts is None:
         return True
-    return dt_util.utcnow() - reading.ts > STALENESS_THRESHOLD
+    # abs(): a timestamp in the FUTURE is not freshness. A device with a
+    # skewed clock (or a cloud-side glitch) that stamps samples hours ahead
+    # would otherwise satisfy `now - ts <= threshold` forever and pin every
+    # entity "available" on data that never updates again.
+    return abs(dt_util.utcnow() - reading.ts) > STALENESS_THRESHOLD
 
 
 class AirVisualOutdoorCoordinator(DataUpdateCoordinator[NodeReading]):
@@ -57,6 +62,13 @@ class AirVisualOutdoorCoordinator(DataUpdateCoordinator[NodeReading]):
         self.client = client
         self._rate_limited = False
         self._stale = False
+        #: Called after every SUCCESSFUL update. Set by ``async_setup_entry``
+        #: to trigger the throttled statistics backfill. Deliberately not a
+        #: coordinator listener: DataUpdateCoordinator polls only while it
+        #: HAS listeners, so registering one for the backfill would keep the
+        #: node's globally-shared request budget burning even when every
+        #: entity is disabled and nothing consumes the data.
+        self.on_updated: Callable[[], None] | None = None
 
     async def _async_update_data(self) -> NodeReading:
         """Fetch the node's current reading.
@@ -108,6 +120,8 @@ class AirVisualOutdoorCoordinator(DataUpdateCoordinator[NodeReading]):
             self._rate_limited = False
             _LOGGER.info("Node %s request budget recovered", self.client.node_id)
         self._log_staleness(reading)
+        if self.on_updated is not None:
+            self.on_updated()
         return reading
 
     def _log_staleness(self, reading: NodeReading) -> None:

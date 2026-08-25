@@ -23,10 +23,19 @@ uv run --python '>=3.14.2' --with mypy --with homeassistant --with aiohttp \
 # Tests (with coverage)
 uv run --python '>=3.14.2' --with pytest-homeassistant-custom-component \
   --with pytest-cov python -m pytest tests/ -v \
-  --cov=custom_components.airvisual_outdoor --cov-report=term-missing
+  --cov=custom_components.airvisual_outdoor --cov-report=term-missing \
+  --cov-fail-under=100
 ```
 
-CI runs the same four gates on every push and PR.
+CI runs those same gates on every pull request, and on pushes to `main`.
+Note `--cov-fail-under=100` above: coverage is a hard gate, and omitting it
+locally is how a PR discovers at CI time that it dropped to 99%.
+
+Two more jobs run alongside them: a HACS/hassfest validation workflow, and
+a `Minimum supported HA` job that installs the exact floor declared in
+`hacs.json` and re-runs the imports and mypy against it — the four gates
+above always resolve the *latest* Home Assistant, so without it the declared
+floor is never actually exercised.
 
 ## Conventions
 

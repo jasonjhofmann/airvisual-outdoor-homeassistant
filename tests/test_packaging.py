@@ -92,6 +92,17 @@ def test_no_translation_keys_are_dead() -> None:
     for key in strings["config"]["error"]:
         assert f'"{key}"' in sources, f"error key {key} is never emitted"
 
+    # Abort reasons too. `async_set_unique_id` raises AbortFlow(
+    # "already_in_progress") on a concurrent duplicate flow and
+    # `async_update_reload_and_abort` aborts "reconfigure_successful", so
+    # neither string appears literally in this package -- but the frontend
+    # still needs a body to render for each. Assert the set explicitly.
+    assert set(strings["config"]["abort"]) == {
+        "already_configured",
+        "already_in_progress",
+        "reconfigure_successful",
+    }
+
 
 # --- constants that encode a MEASURED external constraint -------------------
 #
@@ -155,3 +166,85 @@ def test_compile_lag_leaves_the_recorder_its_own_hour() -> None:
     from custom_components.airvisual_outdoor.statistics import COMPILE_LAG
 
     assert COMPILE_LAG.total_seconds() >= 3600
+
+
+def test_quality_scale_covers_every_rule_it_claims() -> None:
+    """The Platinum self-assessment must not silently skip a rule.
+
+    Nothing in CI can catch this: hassfest's `validate_iqs_file` opens with
+    `if not integration.core: return`, so it skips custom integrations
+    entirely — the quality-scale claim in manifest.json is honour-system.
+    This pins the Bronze/Silver/Gold/Platinum rules the integration must
+    address, so dropping one fails here instead of quietly weakening the
+    claim.
+    """
+    import yaml
+
+    manifest = json.loads((COMPONENT / "manifest.json").read_text())
+    assert manifest["quality_scale"] == "platinum"
+
+    declared = set(
+        yaml.safe_load((COMPONENT / "quality_scale.yaml").read_text())["rules"]
+    )
+    # Home Assistant's canonical rule set (script/hassfest/quality_scale.py).
+    required = {
+        # Bronze
+        "action-setup",
+        "appropriate-polling",
+        "brands",
+        "common-modules",
+        "config-flow",
+        "config-flow-test-coverage",
+        "dependency-transparency",
+        "docs-actions",
+        "docs-conditions",
+        "docs-high-level-description",
+        "docs-installation-instructions",
+        "docs-removal-instructions",
+        "docs-triggers",
+        "entity-event-setup",
+        "entity-unique-id",
+        "has-entity-name",
+        "runtime-data",
+        "test-before-configure",
+        "test-before-setup",
+        "unique-config-entry",
+        # Silver
+        "action-exceptions",
+        "config-entry-unloading",
+        "docs-configuration-parameters",
+        "docs-installation-parameters",
+        "entity-unavailable",
+        "integration-owner",
+        "log-when-unavailable",
+        "parallel-updates",
+        "reauthentication-flow",
+        "test-coverage",
+        # Gold
+        "devices",
+        "diagnostics",
+        "discovery",
+        "discovery-update-info",
+        "docs-data-update",
+        "docs-examples",
+        "docs-known-limitations",
+        "docs-supported-devices",
+        "docs-supported-functions",
+        "docs-troubleshooting",
+        "docs-use-cases",
+        "dynamic-devices",
+        "entity-category",
+        "entity-device-class",
+        "entity-disabled-by-default",
+        "entity-translations",
+        "exception-translations",
+        "icon-translations",
+        "reconfiguration-flow",
+        "repair-issues",
+        "stale-devices",
+        # Platinum
+        "async-dependency",
+        "inject-websession",
+        "strict-typing",
+    }
+    assert required - declared == set(), f"unaddressed: {sorted(required - declared)}"

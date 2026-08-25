@@ -209,14 +209,22 @@ async def async_backfill_statistics(
     window_start = min(h.ts for h in candidates)
     window_end = max(h.ts for h in candidates)
 
-    # entity_id -> source, for the entities that actually exist.
+    # entity_id -> source, for the entities that actually exist AND are
+    # enabled. `async_get_entity_id` is a plain index lookup and happily
+    # returns a disabled entity, which has no state at all — HA would never
+    # compile statistics for it, so importing would invent a long-term series
+    # for an entity the user has explicitly turned off.
     targets: dict[str, BackfillSource] = {}
     for source in BACKFILL_SOURCES:
         entity_id = ent_reg.async_get_entity_id(
             "sensor", DOMAIN, f"{DOMAIN}_{node_id}_{source.key}"
         )
-        if entity_id is not None:
-            targets[entity_id] = source
+        if entity_id is None:
+            continue
+        registry_entry = ent_reg.async_get(entity_id)
+        if registry_entry is not None and registry_entry.disabled_by is not None:
+            continue
+        targets[entity_id] = source
     if not targets:
         return 0
 

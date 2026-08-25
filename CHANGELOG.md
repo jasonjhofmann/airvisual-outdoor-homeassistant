@@ -97,6 +97,39 @@ silent-failure paths and a config-flow UX defect.
   likely cause, when a node starts serving stale data, and once when it
   recovers. "Stale" now has a single definition shared by the log and the
   availability guard, so they cannot disagree.
+- **`NaN` / `Infinity` in the payload escaped the typed error taxonomy.**
+  `json.loads` accepts both non-standard literals, and `_int()` then raised
+  `ValueError`/`OverflowError` — outside this module's error hierarchy, so
+  the config flow (which catches only the typed errors) hit an unknown-error
+  dead end instead of showing a form error, and a live poll escaped the
+  coordinator's `except AirVisualOutdoorError` into its generic handler.
+  Non-finite values now degrade to `None` like any other garbage.
+- **A timestamp in the FUTURE counted as fresh.** The staleness guard tested
+  `now - ts > threshold`, so a device with a skewed clock (or a cloud-side
+  glitch) stamping samples hours ahead would pin every entity "available" on
+  data that never updates again. The comparison is now absolute.
+- **The backfill kept the poll schedule alive by itself.**
+  `DataUpdateCoordinator` polls only while it has listeners, and the backfill
+  was registered as one — so the node's request budget, which is shared
+  globally with every other consumer of that station, kept burning even when
+  every entity was disabled and nothing consumed the data. The backfill is
+  now a post-update hook rather than a listener.
+- **Disabled entities were still backfilled.** `async_get_entity_id` is a
+  plain index lookup and returns disabled entities, which have no state and
+  which HA therefore never compiles statistics for — so the import invented a
+  long-term series for an entity the user had explicitly turned off.
+- **A rate-limited setup said "check connectivity".** `TransportError`,
+  `RateLimitError` and `ParseError` all collapsed into `cannot_connect`,
+  whose text sends the user debugging the network and recommends retrying
+  immediately — the one action guaranteed not to work when the shared hourly
+  budget is spent. Rate limiting now has its own message.
+- **A concurrent duplicate setup aborted with no message.**
+  `async_set_unique_id` raises `AbortFlow("already_in_progress")` if the same
+  node is added twice at once, and neither strings file defined that reason,
+  so the frontend had nothing to render.
+- **The near-exhaustion warning had no hysteresis**, repeating on every
+  successful poll for the rest of the clock hour. Now edge-triggered like the
+  other repeat-state logs.
 - **In-flight backfills outlived their config entry.** The background task
   used `hass.async_create_background_task`, which is only cancelled at HA
   shutdown, so an unload or reload could leave a backfill writing statistics
@@ -181,6 +214,26 @@ silent-failure paths and a config-flow UX defect.
   incidentally, via the reconfigure flow's reload.
 
 ### Documentation
+
+- `quality_scale.yaml` declared 52 of Home Assistant's 54 rules while
+  `manifest.json` claimed **platinum**: the Bronze rules `docs-conditions`
+  and `docs-triggers` were neither claimed nor exempted. Nothing could catch
+  this — hassfest's `validate_iqs_file` opens with `if not integration.core:
+  return`, so it skips custom integrations entirely and the claim is
+  honour-system. Both rules are now declared, and a test pins the full set.
+- Corrected several comments and cross-references that had drifted: the
+  backfill comment claimed "at most hourly" for a 55-minute throttle that a
+  reload legitimately resets; `validate.yml` justified its permissions with
+  "while this repo is private" (it is public); `architecture.md` pointed at a
+  "Decisions" section that does not exist, and left a superseded per-IP
+  rate-limit claim standing next to the 2026-06-10 re-probe that disproves
+  it. CONTRIBUTING's "four gates" is now accurate (there are more, and `push`
+  only triggers on `main`), and its local pytest command no longer omits the
+  `--cov-fail-under=100` that CI enforces.
+- Removed the Dependabot `pip` ecosystem block: it matched nothing (no
+  requirements file, no `[project]` section, `requirements: []` in the
+  manifest) and produced a false "dependencies are monitored" signal.
+
 
 - `docs/architecture.md`: the "Phase 3 refinement (noted)" paragraph still
   described the pre-0.1.0 behaviour (429 marks entities unavailable) that

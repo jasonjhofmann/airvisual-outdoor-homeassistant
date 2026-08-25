@@ -41,8 +41,10 @@ async def async_setup_entry(
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _reconcile_device_connections(hass, entry)
 
-    # Statistics gap-backfill: once now (entities just registered), then at
-    # most hourly via the coordinator listener. Background task on purpose —
+    # Statistics gap-backfill: once now (entities just registered), then no
+    # more often than BACKFILL_MIN_INTERVAL (55 min) via the coordinator
+    # listener. Note "no more often than", not "hourly": `last_run` is a
+    # closure local, so a reload legitimately re-runs it immediately. Background task on purpose —
     # a blocking task here would stall HA's startup wrap-up and can cascade
     # into freezing OTHER integrations. It is an ENTRY-owned background task
     # so unload/reload cancels an in-flight backfill; the hass-level variant
@@ -69,7 +71,7 @@ async def async_setup_entry(
         )
 
     _maybe_backfill()
-    entry.async_on_unload(coordinator.async_add_listener(_maybe_backfill))
+    coordinator.on_updated = _maybe_backfill
 
     return True
 

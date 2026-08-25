@@ -429,3 +429,33 @@ def test_every_imported_start_would_pass_ha_validation() -> None:
     assert not _is_hour_aligned(HOUR_1.replace(minute=1))
     assert not _is_hour_aligned(HOUR_1.replace(second=1))
     assert not _is_hour_aligned(HOUR_1.replace(microsecond=1))
+
+
+async def test_disabled_entities_are_not_backfilled(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    recorder_loaded: None,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A disabled sensor must not get a long-term series it cannot show.
+
+    ``async_get_entity_id`` is a plain index lookup and returns disabled
+    entities too. A disabled entity has no state, so HA never compiles
+    statistics for it — importing would invent history for something the
+    user explicitly turned off.
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    freezer.move_to(FROZEN_NOW)
+    ent_reg = er.async_get(hass)
+    ent_reg.async_update_entity(
+        "sensor.backyard_co2", disabled_by=er.RegistryEntryDisabler.USER
+    )
+
+    rec, during, imp = _patches()
+    with rec, during, imp as import_mock:
+        imported = await async_backfill_statistics(hass, init_integration.runtime_data)
+
+    assert imported == 12  # 6 remaining sensors x 2 hours, CO2 skipped
+    written = {call[0][1]["statistic_id"] for call in import_mock.call_args_list}
+    assert "sensor.backyard_co2" not in written

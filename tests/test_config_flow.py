@@ -262,3 +262,40 @@ async def test_reconfigure_error_keeps_the_new_scale(
     # SCALE_CN, not the stored SCALE_US.
     assert suggested[CONF_AQI_SCALE] == SCALE_CN
     assert suggested[CONF_MAC] == "garbage"
+
+
+async def test_user_flow_rate_limited_is_its_own_error(
+    hass: HomeAssistant, mock_client: MagicMock
+) -> None:
+    """A spent budget is not a connectivity problem.
+
+    All three of TransportError / RateLimitError / ParseError used to collapse
+    into `cannot_connect` ("Check connectivity and try again"), which sends
+    the user debugging the wrong thing and recommends the one action
+    guaranteed not to work.
+    """
+    from custom_components.airvisual_outdoor.api import RateLimitError
+
+    mock_client.async_get_reading.side_effect = RateLimitError("drained")
+    flow_id = await _start_user_flow(hass)
+    with patch_client(mock_client):
+        result = await hass.config_entries.flow.async_configure(
+            flow_id, {CONF_NODE_ID: TEST_NODE_ID, CONF_AQI_SCALE: SCALE_US}
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "rate_limited"}
+
+
+async def test_user_flow_parse_error_is_cannot_connect(
+    hass: HomeAssistant, mock_client: MagicMock
+) -> None:
+    """The third arm of the old combined except clause was never exercised."""
+    from custom_components.airvisual_outdoor.api import ParseError
+
+    mock_client.async_get_reading.side_effect = ParseError("html challenge wall")
+    flow_id = await _start_user_flow(hass)
+    with patch_client(mock_client):
+        result = await hass.config_entries.flow.async_configure(
+            flow_id, {CONF_NODE_ID: TEST_NODE_ID, CONF_AQI_SCALE: SCALE_US}
+        )
+    assert result["errors"] == {"base": "cannot_connect"}

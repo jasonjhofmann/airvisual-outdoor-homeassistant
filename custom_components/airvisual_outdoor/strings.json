@@ -34,11 +34,13 @@
       "invalid_node_id": "Node IDs are exactly 24 hex characters (0-9, a-f).",
       "invalid_mac": "That doesn't look like a MAC address (AA:BB:CC:DD:EE:FF).",
       "device_not_found": "IQAir's API has no device with this node ID.",
-      "cannot_connect": "Could not reach IQAir's node API. Check connectivity and try again."
+      "cannot_connect": "Could not reach IQAir's node API. Check connectivity and try again.",
+      "rate_limited": "This node's hourly request budget is already spent. The budget is shared by everyone polling this station, and it resets at the top of the hour — wait and try again."
     },
     "abort": {
       "already_configured": "This node is already configured.",
-      "reconfigure_successful": "Reconfiguration successful."
+      "reconfigure_successful": "Reconfiguration successful.",
+      "already_in_progress": "This node is already being configured."
     }
   },
   "selector": {

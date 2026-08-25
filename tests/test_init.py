@@ -153,3 +153,28 @@ async def test_reconcile_is_a_noop_without_a_device(
         data={**init_integration.data, CONF_NODE_ID: "feedfacefeedfacefeedface"},
     )
     _reconcile_device_connections(hass, init_integration)  # must not raise
+
+
+async def test_backfill_does_not_keep_the_poll_schedule_alive(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """The backfill must not be a coordinator listener.
+
+    DataUpdateCoordinator polls only while it HAS listeners. Registering one
+    for the backfill would keep burning the node's request budget — which is
+    shared globally with every other consumer of that station — even when
+    every entity is disabled and nothing consumes the data.
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    coordinator = init_integration.runtime_data
+    assert coordinator.on_updated is not None
+
+    # Exactly one listener per entity, and nothing else. Before this was a
+    # hook it was entities + 1, and that extra one alone was enough to keep
+    # the 300 s poll scheduled forever.
+    entities = er.async_entries_for_config_entry(
+        er.async_get(hass), init_integration.entry_id
+    )
+    assert len(entities) == 10
+    assert len(coordinator._listeners) == len(entities)

@@ -287,3 +287,78 @@ def test_timestamp_without_zone_is_assumed_utc(
     assert all(h.ts.tzinfo is not None for h in reading.hourly)
     # The comparisons that used to raise now work.
     assert reading.ts > datetime(2026, 6, 10, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+def test_non_finite_numbers_degrade_to_none(
+    node_response_dict: dict[str, Any], literal: str
+) -> None:
+    """``json.loads`` accepts NaN/Infinity; they must not escape the parser.
+
+    Left alone they reach ``int()``, which raises ValueError/OverflowError —
+    outside this module's typed error taxonomy, so the config flow (which
+    catches only the typed errors) hits an unknown-error dead end and a live
+    poll escapes the coordinator's ``except AirVisualOutdoorError``.
+    """
+    import json as _json
+
+    raw = _json.dumps(node_response_dict)
+    payload = _json.loads(
+        raw.replace('"co2": 459', f'"co2": {literal}').replace(
+            '"tp": 33.2', f'"tp": {literal}'
+        )
+    )
+    reading = normalise(payload, rate_limit_remaining=None)
+    assert reading.co2 is None
+    assert reading.temperature is None
+
+
+async def test_non_finite_payload_is_a_typed_error_not_a_crash(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """End to end: a NaN payload never raises an untyped exception."""
+    aioclient_mock.get(
+        NODE_URL,
+        text='{"name": "X", "current": {"co2": NaN, "tp": Infinity,'
+        ' "ts": "2026-06-10T03:52:07.000Z"}}',
+    )
+    reading = await _client(hass).async_get_reading()
+    assert reading.co2 is None
+    assert reading.temperature is None
+
+
+async def test_low_budget_warning_is_edge_triggered(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    node_response_dict: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The near-exhaustion warning fires once per episode, not per poll.
+
+    Without hysteresis it repeats on every successful response for as long
+    as the budget stays low — which is the rest of the clock hour.
+    """
+    client = _client(hass)
+
+    aioclient_mock.get(
+        NODE_URL, json=node_response_dict, headers={"x-ratelimit-remaining": "1"}
+    )
+    caplog.clear()
+    for _ in range(3):
+        await client.async_get_reading()
+    assert caplog.text.count("nearly exhausted") == 1
+
+    # Budget resets at the top of the hour -> the next episode warns again.
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        NODE_URL, json=node_response_dict, headers={"x-ratelimit-remaining": "29"}
+    )
+    await client.async_get_reading()
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        NODE_URL, json=node_response_dict, headers={"x-ratelimit-remaining": "2"}
+    )
+    caplog.clear()
+    await client.async_get_reading()
+    assert caplog.text.count("nearly exhausted") == 1

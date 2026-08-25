@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -112,8 +113,20 @@ def _pollutant(block: Any) -> PollutantReading:
 
 
 def _number(value: Any) -> float | None:
-    """A float, or None for absent/non-numeric values."""
+    """A float, or None for absent/non-numeric/non-finite values.
+
+    ``json.loads`` accepts the non-standard ``NaN`` / ``Infinity`` literals,
+    and a non-finite value poisons everything downstream: ``_int`` raises
+    ``ValueError``/``OverflowError``, which escapes this module's typed
+    error taxonomy entirely — the config flow, which catches only the typed
+    errors, dies on an unknown-error dead end instead of showing
+    ``cannot_connect``, and a live poll escapes the coordinator's
+    ``except AirVisualOutdoorError`` into its generic handler. Rejecting
+    them here keeps the module's promise to never return partial garbage.
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value):
         return None
     return float(value)
 
@@ -222,6 +235,7 @@ class AirVisualOutdoorClient:
         """Store the shared session and the node this client polls."""
         self._session = session
         self.node_id = node_id
+        self._warned_low_budget = False
 
     async def async_get_reading(self) -> NodeReading:
         """Fetch and normalise the node's current readings.
@@ -256,12 +270,20 @@ class AirVisualOutdoorClient:
         if not isinstance(payload, dict):
             raise ParseError("node API returned non-object JSON")
 
-        if remaining is not None and remaining <= 2:
-            _LOGGER.warning(
-                "Node %s rate-limit budget nearly exhausted (%s requests left)",
-                self.node_id,
-                remaining,
-            )
+        # Edge-triggered, like every other repeat-state log here: without the
+        # flag this fires on every successful poll for as long as the budget
+        # stays low, which is the whole rest of the clock hour.
+        if remaining is not None:
+            if remaining <= 2 and not self._warned_low_budget:
+                self._warned_low_budget = True
+                _LOGGER.warning(
+                    "Node %s rate-limit budget nearly exhausted (%s requests"
+                    " left); it resets at the top of the hour",
+                    self.node_id,
+                    remaining,
+                )
+            elif remaining > 2:
+                self._warned_low_budget = False
         return normalise(payload, remaining)
 
 

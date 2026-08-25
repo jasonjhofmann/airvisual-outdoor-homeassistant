@@ -59,9 +59,10 @@ Responses carry `x-ratelimit-limit: 30` / `x-ratelimit-remaining: N`
 - **The bucket is keyed per node id (per URL path), not per IP alone** —
   requests for a bogus node id ran against their own fresh 30-budget while
   the real node's bucket sat 6 lower. A second monitor therefore gets its
-  own budget; what DOES share one bucket is every consumer of the *same*
-  node behind the same IP (e.g. a YAML `rest:` package polling alongside
-  this integration during cutover).
+  own budget. (The first pass read this as "shared by consumers of the same
+  node *behind the same IP*". That qualifier was wrong and the 2026-06-10
+  re-probe below supersedes it: the bucket is shared GLOBALLY across every
+  client IP.)
 - Valid GETs decrement 1:1; 404s decrement too (their own path's bucket).
 - **Window: fixed calendar hour, full reset at :00 UTC** — CONFIRMED across
   four consecutive boundaries (04:00–07:00Z, 3 h of 10-min sampling on an
@@ -103,7 +104,8 @@ legacy REST package's cadence, and even brief co-polling during cutover fits:
 the Phase 2 deploy (a const change needs the restart Phase 2 forces anyway).
 
 Consequences for the design:
-- One coordinator **per node** but a polite default interval (see Decisions).
+- One coordinator **per node** but a polite default interval (see
+  "Poll interval: LOCKED at 300 s" above).
 - Client must surface `x-ratelimit-remaining` (diagnostics) and handle 429
   with backoff if it ever appears.
 
