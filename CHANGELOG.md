@@ -158,10 +158,11 @@ silent-failure paths and a config-flow UX defect.
   noise control, *not* quota protection. An earlier draft of this entry
   claimed any GitHub user could spend the owner's Claude quota by mentioning
   `@claude`; that was wrong. `claude-code-action` already refuses non-write
-  actors on its own: `src/entrypoints/prepare.ts` calls
-  `checkWritePermissions()` at step 3 — before the trigger check and before
-  any Claude call — and throws `Actor does not have write permissions to the
-  repository`, failing **closed** (an API error re-throws). What the missing
+  actors on its own: the `@v1` action runs `src/entrypoints/run.ts`, which
+  calls `checkWritePermissions()` at `run.ts:197` and throws `Actor does not
+  have write permissions to the repository` at `:204` — before Claude is even
+  installed (`:240`) or invoked (`:294`) — failing **closed** (an API error
+  re-throws). What the missing
   gate did cost was a started runner and a **failed workflow run** in the
   Actions tab for every stranger who mentioned `@claude`. The job-level `if:`
   now filters on `author_association`, so the job never starts and the
