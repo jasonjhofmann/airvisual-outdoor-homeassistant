@@ -6,6 +6,13 @@ follow [SemVer](https://semver.org/) with a `v` prefix on tags.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-27
+
+- **Repository CI/workflow hardening only — no integration code changes.**
+  Correct the @claude workflow gate rationale (the pinned action already
+  blocks non-write actors), cite the entrypoint it actually runs
+  (`run.ts`), and stop running the automated review on Dependabot PRs.
+
 ## [0.2.1] - 2026-08-24
 
 Whole-repository review. Nothing here is a user-visible regression fix for a
@@ -363,7 +370,8 @@ silent-failure paths and a config-flow UX defect.
   shape, rate limiting, error modes, transport quirks) plus the proposed
   integration shape and its open questions.
 
-[Unreleased]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.1.0...v0.1.1
