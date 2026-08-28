@@ -125,7 +125,9 @@ async def test_mac_connection_follows_the_entry(
     from .conftest import TEST_MAC, TEST_NODE_ID, patch_client
 
     dev_reg = dr.async_get(hass)
-    device = dev_reg.async_get_device(identifiers={(DOMAIN, TEST_NODE_ID)})
+    device = dev_reg.async_get_device_by_identifier(
+        (DOMAIN, TEST_NODE_ID), init_integration.entry_id
+    )
     assert (dr.CONNECTION_NETWORK_MAC, TEST_MAC) in device.connections
 
     result = await init_integration.start_reconfigure_flow(hass)
@@ -136,7 +138,9 @@ async def test_mac_connection_follows_the_entry(
         await hass.async_block_till_done()
 
     assert CONF_MAC not in init_integration.data
-    device = dev_reg.async_get_device(identifiers={(DOMAIN, TEST_NODE_ID)})
+    device = dev_reg.async_get_device_by_identifier(
+        (DOMAIN, TEST_NODE_ID), init_integration.entry_id
+    )
     assert device.connections == set()
 
 

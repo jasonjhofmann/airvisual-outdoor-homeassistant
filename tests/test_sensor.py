@@ -133,7 +133,9 @@ async def test_device_entry_carries_identity(
 ) -> None:
     """Device entry: IQAir identity, node-id serial, config-supplied MAC."""
     dev_reg = dr.async_get(hass)
-    device = dev_reg.async_get_device(identifiers={(DOMAIN, TEST_NODE_ID)})
+    device = dev_reg.async_get_device_by_identifier(
+        (DOMAIN, TEST_NODE_ID), init_integration.entry_id
+    )
     assert device is not None
     assert device.manufacturer == "IQAir"
     assert device.model == "AirVisual Outdoor"

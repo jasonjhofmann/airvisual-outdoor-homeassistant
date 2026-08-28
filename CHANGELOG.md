@@ -6,6 +6,12 @@ follow [SemVer](https://semver.org/) with a `v` prefix on tags.
 
 ## [Unreleased]
 
+- Tests: migrated device-registry lookups to `async_get_device_by_identifier`
+  (HA dev hard-errors the deprecated `async_get_device` in test frames). The
+  one remaining in-code call (`__init__.py` MAC reconcile) logs a deprecation
+  on HA 2026.8+ and breaks in 2027.8; migrating it needs a floor bump to
+  2026.8.0 since the replacement API doesn't exist on 2026.7.
+
 ## [0.2.2] - 2026-08-27
 
 - **Repository CI/workflow hardening only — no integration code changes.**
