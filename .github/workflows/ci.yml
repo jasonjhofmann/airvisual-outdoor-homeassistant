@@ -34,11 +34,17 @@ jobs:
           uv run --python '>=3.14.2' --with ruff \
             ruff format --check custom_components/ tests/
 
+      # Type-checked against the declared support floor (hacs.json 2026.7.0), not the
+      # newest release: HA 2026.9 moved core to probatio and 2026.10 retyped schema
+      # arguments as probatio.Schema, so mypy against the latest HA rejects the
+      # voluptuous schemas the floor needs (probatio does not exist before 2026.9).
+      # HA still accepts voluptuous schemas at runtime; the test job, which resolves
+      # the latest harness, covers runtime on the newest HA.
       - name: Mypy (strict)
         run: |
           uv run --python '>=3.14.2' \
             --with mypy \
-            --with homeassistant \
+            --with homeassistant==2026.7.0 \
             --with aiohttp \
             --with voluptuous \
             mypy custom_components/airvisual_outdoor/
