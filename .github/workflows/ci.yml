@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Nightly, so drift in the latest Home Assistant shows up the day it lands
+    # instead of at the next push.
+    - cron: "30 3 * * *"
+  workflow_dispatch:
 
 # Least privilege: nothing here writes to the repo.
 permissions:
@@ -44,53 +49,59 @@ jobs:
               --cov-report=term-missing \
               --cov-fail-under=100
 
-  # The gates above always resolve the LATEST Home Assistant, so the
-  # 2026.7.0 floor declared in hacs.json and the README was never actually
-  # exercised: code could start depending on a 2026.8-only API and CI would
-  # stay green while HACS happily offered the release to a 2026.7 user.
-  # Import + type-check against the floor itself.
+  # Proves the floor declared in hacs.json is real. The other gates resolve
+  # the LATEST Home Assistant, so code could start depending on a newer API
+  # while HACS keeps offering the release to users on the declared floor.
+  # Reads the floor from hacs.json and the integration's own requirements
+  # from manifest.json, then imports every module and type-checks against
+  # that exact release.
   #
-  # This is also the only mypy run. A second one against the latest HA was
-  # dropped on 2026-10-18: HA 2026.9 moved core to probatio and 2026.10 retyped
-  # schema arguments as probatio.Schema, so mypy there rejects the voluptuous
-  # schemas the floor needs (probatio does not exist before 2026.9). HA still
-  # accepts voluptuous schemas at runtime, and the pytest gate covers runtime
-  # on the newest HA.
+  # This is also the only mypy run. HA 2026.9 moved core to probatio and
+  # 2026.10 retyped schema arguments as probatio.Schema, so mypy against the
+  # latest HA rejects the voluptuous schemas older releases need (probatio
+  # does not exist before 2026.9). HA still accepts voluptuous schemas at
+  # runtime, and the test job covers runtime on the newest HA.
   minimum-supported-ha:
-    name: Minimum supported HA (2026.7.0)
+    name: Minimum supported HA (hacs.json floor)
     runs-on: ubuntu-latest
+    env:
+      # Must satisfy the floor's requires-python (HA 2026.7.0 = Python
+      # 3.14.2+), and stay below 3.15: uv would otherwise pick CPython 3.15, where
+      # HA 2026.7.0's pinned Pillow has no wheel.
+      FLOOR_PYTHON: ">=3.14.2,<3.15"
     steps:
       - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
-      - name: Read the declared floor from hacs.json
-        id: floor
+      - name: Pin the floor and the integration's requirements
         run: |
-          floor=$(python3 -c "import json;print(json.load(open('hacs.json'))['homeassistant'])")
-          echo "version=$floor" >> "$GITHUB_OUTPUT"
-          echo "Declared Home Assistant floor: $floor"
+          python3 - <<'PY'
+          import json
+          floor = json.load(open("hacs.json"))["homeassistant"]
+          reqs = json.load(open("custom_components/airvisual_outdoor/manifest.json"))["requirements"]
+          with open("floor-requirements.txt", "w") as f:
+              f.write("\n".join([f"homeassistant=={floor}", "voluptuous", *reqs]) + "\n")
+          print(f"Declared Home Assistant floor: {floor}; requirements: {reqs}")
+          PY
 
       - name: Import every module against the floor
         run: |
-          uv run --python '>=3.14.2,<3.15' \
-            --with "homeassistant==${{ steps.floor.outputs.version }}" \
+          uv run --no-project --python "$FLOOR_PYTHON" \
+            --with-requirements floor-requirements.txt \
             python -c "
-          import importlib
-          for name in (
-              'api', 'const', 'coordinator', 'entity', 'sensor',
-              'config_flow', 'diagnostics', 'statistics', '__init__',
-          ):
-              importlib.import_module(f'custom_components.airvisual_outdoor.{name}')
-          print('all modules import on the declared floor')
+          import importlib, pkgutil
+          import custom_components.airvisual_outdoor as pkg
+          names = [m.name for m in pkgutil.iter_modules(pkg.__path__)]
+          for name in names:
+              importlib.import_module(f'{pkg.__name__}.{name}')
+          print(f'{len(names)} modules import on the declared floor')
           "
 
       - name: Mypy (strict) against the floor
         run: |
-          uv run --python '>=3.14.2,<3.15' \
+          uv run --no-project --python "$FLOOR_PYTHON" \
+            --with-requirements floor-requirements.txt \
             --with mypy \
-            --with "homeassistant==${{ steps.floor.outputs.version }}" \
-            --with aiohttp \
-            --with voluptuous \
             mypy custom_components/airvisual_outdoor/
