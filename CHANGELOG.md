@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow [SemVer](https://semver.org/) with a `v` prefix on tags.
 
-## [Unreleased]
+## [0.2.3] - 2026-10-18
 
 - Tests: migrated device-registry lookups to `async_get_device_by_identifier`
   (HA dev hard-errors the deprecated `async_get_device` in test frames). The
