@@ -11,13 +11,16 @@ follow [SemVer](https://semver.org/) with a `v` prefix on tags.
   one remaining in-code call (`__init__.py` MAC reconcile) logs a deprecation
   on HA 2026.8+ and breaks in 2027.8; migrating it needs a floor bump to
   2026.8.0 since the replacement API doesn't exist on 2026.7.
-- **CI: mypy now type-checks against the declared floor
-  (`homeassistant==2026.7.0`).** HA 2026.9 moved core from voluptuous to
-  probatio, and HA 2026.10 retyped schema arguments to match, so mypy against
-  the newest HA flagged the voluptuous schemas older releases need. The next
-  push would have failed CI. Typing only: HA still accepts voluptuous schemas
-  at runtime, and the test job still runs on the newest HA. No integration
-  code changes.
+- **CI: mypy runs only against the declared floor.** HA 2026.9 moved core
+  from voluptuous to probatio, and HA 2026.10 retyped schema arguments to
+  match, so the mypy step against the newest HA flagged the voluptuous schemas
+  older releases need. It is removed; the existing Minimum supported HA job
+  already type-checks against the floor read from `hacs.json`. Typing only: HA
+  still accepts voluptuous schemas at runtime, and the pytest gate still runs
+  on the newest HA. No integration code changes.
+- **CI: Python capped below 3.15.** `--python '>=3.14.2'` started resolving
+  CPython 3.15.0, where HA 2026.7.0's pinned Pillow has no wheel and fails to
+  build. Now `'>=3.14.2,<3.15'`.
 
 ## [0.2.2] - 2026-08-27
 

@@ -26,32 +26,17 @@ jobs:
 
       - name: Ruff (lint)
         run: |
-          uv run --python '>=3.14.2' --with ruff \
+          uv run --python '>=3.14.2,<3.15' --with ruff \
             ruff check custom_components/ tests/
 
       - name: Ruff (format check)
         run: |
-          uv run --python '>=3.14.2' --with ruff \
+          uv run --python '>=3.14.2,<3.15' --with ruff \
             ruff format --check custom_components/ tests/
-
-      # Type-checked against the declared support floor (hacs.json 2026.7.0), not the
-      # newest release: HA 2026.9 moved core to probatio and 2026.10 retyped schema
-      # arguments as probatio.Schema, so mypy against the latest HA rejects the
-      # voluptuous schemas the floor needs (probatio does not exist before 2026.9).
-      # HA still accepts voluptuous schemas at runtime; the test job, which resolves
-      # the latest harness, covers runtime on the newest HA.
-      - name: Mypy (strict)
-        run: |
-          uv run --python '>=3.14.2' \
-            --with mypy \
-            --with homeassistant==2026.7.0 \
-            --with aiohttp \
-            --with voluptuous \
-            mypy custom_components/airvisual_outdoor/
 
       - name: Pytest (with coverage gate)
         run: |
-          uv run --python '>=3.14.2' \
+          uv run --python '>=3.14.2,<3.15' \
             --with pytest-homeassistant-custom-component \
             --with pytest-cov \
             python -m pytest tests/ -v \
@@ -59,11 +44,18 @@ jobs:
               --cov-report=term-missing \
               --cov-fail-under=100
 
-  # The four gates above always resolve the LATEST Home Assistant, so the
+  # The gates above always resolve the LATEST Home Assistant, so the
   # 2026.7.0 floor declared in hacs.json and the README was never actually
   # exercised: code could start depending on a 2026.8-only API and CI would
   # stay green while HACS happily offered the release to a 2026.7 user.
   # Import + type-check against the floor itself.
+  #
+  # This is also the only mypy run. A second one against the latest HA was
+  # dropped on 2026-10-18: HA 2026.9 moved core to probatio and 2026.10 retyped
+  # schema arguments as probatio.Schema, so mypy there rejects the voluptuous
+  # schemas the floor needs (probatio does not exist before 2026.9). HA still
+  # accepts voluptuous schemas at runtime, and the pytest gate covers runtime
+  # on the newest HA.
   minimum-supported-ha:
     name: Minimum supported HA (2026.7.0)
     runs-on: ubuntu-latest
@@ -82,7 +74,7 @@ jobs:
 
       - name: Import every module against the floor
         run: |
-          uv run --python '>=3.14.2' \
+          uv run --python '>=3.14.2,<3.15' \
             --with "homeassistant==${{ steps.floor.outputs.version }}" \
             python -c "
           import importlib
@@ -96,7 +88,7 @@ jobs:
 
       - name: Mypy (strict) against the floor
         run: |
-          uv run --python '>=3.14.2' \
+          uv run --python '>=3.14.2,<3.15' \
             --with mypy \
             --with "homeassistant==${{ steps.floor.outputs.version }}" \
             --with aiohttp \
