@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow [SemVer](https://semver.org/) with a `v` prefix on tags.
 
+## [0.2.4] - 2026-10-20
+
+- **Setup wiped connections that other integrations had put on the
+  device.** Since 0.2.1, every setup overwrote the device's whole connection
+  set with the entry's own MAC, or with nothing when no MAC was configured.
+  Before Home Assistant 2026.8, a MAC that another integration already knew
+  for the unit merges both into one device row shared by the two config
+  entries, so every restart dropped that integration's other connections.
+  Setup no longer touches connections. The reconfigure flow now removes the
+  one MAC connection this entry registered, and only when the MAC is cleared
+  or changed; every other connection stays.
+- The deprecated `device_registry.async_get_device` call flagged in 0.2.3
+  went with that code, so the floor bump it would have needed is no longer
+  required.
+
 ## [0.2.3] - 2026-10-18
 
 - Tests: migrated device-registry lookups to `async_get_device_by_identifier`
@@ -389,7 +404,9 @@ silent-failure paths and a config-flow UX defect.
   shape, rate limiting, error modes, transport quirks) plus the proposed
   integration shape and its open questions.
 
-[Unreleased]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.1.1...v0.2.0

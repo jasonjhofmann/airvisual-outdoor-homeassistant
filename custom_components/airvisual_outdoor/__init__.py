@@ -12,12 +12,11 @@ from datetime import datetime
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
 from .api import AirVisualOutdoorClient
-from .const import BACKFILL_MIN_INTERVAL, CONF_MAC, CONF_NODE_ID, DOMAIN
+from .const import BACKFILL_MIN_INTERVAL, CONF_NODE_ID, DOMAIN
 from .coordinator import AirVisualOutdoorConfigEntry, AirVisualOutdoorCoordinator
 from .statistics import async_backfill_statistics
 
@@ -39,7 +38,6 @@ async def async_setup_entry(
     entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    _reconcile_device_connections(hass, entry)
 
     # Statistics gap-backfill: once now (entities just registered), then no
     # more often than BACKFILL_MIN_INTERVAL (55 min) via the coordinator
@@ -74,32 +72,6 @@ async def async_setup_entry(
     coordinator.on_updated = _maybe_backfill
 
     return True
-
-
-def _reconcile_device_connections(
-    hass: HomeAssistant, entry: AirVisualOutdoorConfigEntry
-) -> None:
-    """Match the device's MAC connection to the entry's current config.
-
-    ``DeviceInfo.connections`` is MERGED into the device entry on every
-    setup, never replaced, so dropping the optional MAC in the reconfigure
-    flow would otherwise leave the stale connection — and the network-device
-    link it creates — in place forever.
-
-    Rewriting connections wholesale is safe here because a device entry
-    belongs to exactly one config entry (``DeviceEntry.config_entry_id``);
-    this row is ours alone and cannot be carrying another integration's
-    connections.
-    """
-    dev_reg = dr.async_get(hass)
-    device = dev_reg.async_get_device(identifiers={(DOMAIN, entry.data[CONF_NODE_ID])})
-    if device is None:
-        return
-    configured: set[tuple[str, str]] = set()
-    if mac := entry.data.get(CONF_MAC):
-        configured = {(dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac))}
-    if device.connections != configured:
-        dev_reg.async_update_device(device.id, new_connections=configured)
 
 
 async def async_unload_entry(

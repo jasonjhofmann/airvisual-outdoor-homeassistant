@@ -2,7 +2,7 @@
 
 Most setup behavior is exercised indirectly by the sensor/statistics tests;
 this module covers what only setup itself owns — the backfill background
-task's crash containment.
+task's crash containment, and leaving the device's connections alone.
 """
 
 from __future__ import annotations
@@ -102,61 +102,54 @@ async def test_backfill_is_throttled_between_updates(
     backfill.assert_not_called()
 
 
-async def test_mac_connection_follows_the_entry(
+@pytest.mark.parametrize("with_mac", [True, False], ids=["mac", "no_mac"])
+async def test_setup_leaves_other_connections_alone(
     hass: HomeAssistant,
-    init_integration: MockConfigEntry,
+    mock_config_entry: MockConfigEntry,
     mock_client: MagicMock,
+    with_mac: bool,
 ) -> None:
-    """Clearing the optional MAC actually drops the device connection.
+    """Setup never drops a connection this entry did not register.
 
-    ``DeviceInfo.connections`` is merged into the device entry rather than
-    replacing it, so without an explicit reconcile the network-device merge
-    survives a reconfigure that removed the MAC.
+    The device row can carry connections that are not ours: before HA 2026.8
+    the optional MAC merged the device with another integration's device for
+    the same unit, so both config entries share the row. Setup used to
+    overwrite the whole set with the entry's own MAC, or with nothing when
+    no MAC was configured, wiping the other integration's connections on
+    every restart.
     """
     from homeassistant.helpers import device_registry as dr
 
-    from custom_components.airvisual_outdoor.const import (
-        CONF_AQI_SCALE,
-        CONF_MAC,
-        DOMAIN,
-        SCALE_US,
+    from custom_components.airvisual_outdoor.const import CONF_MAC
+
+    from .conftest import (
+        FOREIGN_CONNECTION,
+        TEST_MAC,
+        add_foreign_connection,
+        node_device,
+        patch_client,
     )
 
-    from .conftest import TEST_MAC, TEST_NODE_ID, patch_client
-
-    dev_reg = dr.async_get(hass)
-    device = dev_reg.async_get_device_by_identifier(
-        (DOMAIN, TEST_NODE_ID), init_integration.entry_id
+    data = dict(mock_config_entry.data)
+    if not with_mac:
+        del data[CONF_MAC]
+    entry = MockConfigEntry(
+        domain=mock_config_entry.domain,
+        title=mock_config_entry.title,
+        data=data,
+        unique_id=mock_config_entry.unique_id,
     )
-    assert (dr.CONNECTION_NETWORK_MAC, TEST_MAC) in device.connections
+    await setup_integration(hass, entry, mock_client)
+    add_foreign_connection(hass, entry)
 
-    result = await init_integration.start_reconfigure_flow(hass)
     with patch_client(mock_client):
-        await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_AQI_SCALE: SCALE_US}
-        )
+        assert await hass.config_entries.async_reload(entry.entry_id)
         await hass.async_block_till_done()
 
-    assert CONF_MAC not in init_integration.data
-    device = dev_reg.async_get_device_by_identifier(
-        (DOMAIN, TEST_NODE_ID), init_integration.entry_id
-    )
-    assert device.connections == set()
-
-
-async def test_reconcile_is_a_noop_without_a_device(
-    hass: HomeAssistant,
-    init_integration: MockConfigEntry,
-) -> None:
-    """No device row yet (setup raced or produced no entities) = nothing to do."""
-    from custom_components.airvisual_outdoor import _reconcile_device_connections
-    from custom_components.airvisual_outdoor.const import CONF_NODE_ID
-
-    hass.config_entries.async_update_entry(
-        init_integration,
-        data={**init_integration.data, CONF_NODE_ID: "feedfacefeedfacefeedface"},
-    )
-    _reconcile_device_connections(hass, init_integration)  # must not raise
+    expected = {FOREIGN_CONNECTION}
+    if with_mac:
+        expected.add((dr.CONNECTION_NETWORK_MAC, TEST_MAC))
+    assert node_device(hass, entry).connections == expected
 
 
 async def test_backfill_does_not_keep_the_poll_schedule_alive(

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from homeassistant.config_entries import SOURCE_USER
+import pytest
+from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.airvisual_outdoor.api import (
@@ -23,7 +25,15 @@ from custom_components.airvisual_outdoor.const import (
     SCALE_US,
 )
 
-from .conftest import TEST_MAC, TEST_NODE_ID, patch_client
+from .conftest import (
+    FOREIGN_CONNECTION,
+    TEST_MAC,
+    TEST_NODE_ID,
+    add_foreign_connection,
+    node_device,
+    patch_client,
+    setup_integration,
+)
 
 
 async def _start_user_flow(hass: HomeAssistant) -> str:
@@ -208,6 +218,72 @@ async def test_reconfigure_flow_sets_new_mac(
         await hass.async_block_till_done()
     assert result["type"] is FlowResultType.ABORT
     assert entry.data[CONF_MAC] == "11:22:33:44:55:66"
+
+
+@pytest.mark.parametrize(
+    ("user_input", "expected_mac"),
+    [
+        ({CONF_AQI_SCALE: SCALE_US}, None),
+        (
+            {CONF_AQI_SCALE: SCALE_US, CONF_MAC: "11-22-33-44-55-66"},
+            "11:22:33:44:55:66",
+        ),
+        ({CONF_AQI_SCALE: SCALE_CN, CONF_MAC: TEST_MAC}, TEST_MAC),
+    ],
+    ids=["cleared", "changed", "unchanged"],
+)
+async def test_reconfigure_replaces_only_this_entrys_mac(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    user_input: dict[str, str],
+    expected_mac: str | None,
+) -> None:
+    """A cleared or changed MAC drops the old connection and nothing else.
+
+    ``DeviceInfo.connections`` is merged into the device on every setup,
+    never replaced, so without an explicit removal the old MAC (and the
+    network-device link it creates) would stay forever. Every connection the
+    entry did not register stays where it is.
+    """
+    add_foreign_connection(hass, init_integration)
+
+    result = await init_integration.start_reconfigure_flow(hass)
+    with patch_client(mock_client):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input
+        )
+        await hass.async_block_till_done()
+    assert result["reason"] == "reconfigure_successful"
+
+    expected = {FOREIGN_CONNECTION}
+    if expected_mac is not None:
+        expected.add((dr.CONNECTION_NETWORK_MAC, expected_mac))
+    assert node_device(hass, init_integration).connections == expected
+
+
+async def test_reconfigure_clears_mac_before_a_device_exists(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: MagicMock,
+) -> None:
+    """An entry whose first setup never succeeded has no device row yet.
+
+    Reconfigure is offered in that state too, and clearing the MAC there has
+    nothing to remove from the registry; it must not fail.
+    """
+    mock_client.async_get_reading.side_effect = TransportError("down")
+    await setup_integration(hass, mock_config_entry, mock_client)
+    assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+
+    result = await mock_config_entry.start_reconfigure_flow(hass)
+    with patch_client(mock_client):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_AQI_SCALE: SCALE_US}
+        )
+        await hass.async_block_till_done()
+    assert result["reason"] == "reconfigure_successful"
+    assert CONF_MAC not in mock_config_entry.data
 
 
 async def test_user_flow_error_keeps_what_was_typed(

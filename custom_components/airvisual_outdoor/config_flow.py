@@ -22,8 +22,10 @@ from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_NAME
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import (
@@ -168,6 +170,9 @@ class AirVisualOutdoorConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
                 if mac_raw:
                     data[CONF_MAC] = format_mac(mac_raw)
+                old_mac: str | None = existing.data.get(CONF_MAC)
+                if old_mac and old_mac != data.get(CONF_MAC):
+                    _remove_mac_connection(self.hass, existing, old_mac)
                 return self.async_update_reload_and_abort(existing, data=data)
 
         # On a validation error, prefer what the user just submitted over the
@@ -193,3 +198,24 @@ class AirVisualOutdoorConfigFlow(ConfigFlow, domain=DOMAIN):
         session = async_get_clientsession(self.hass)
         client = AirVisualOutdoorClient(session=session, node_id=node_id)
         return await client.async_get_reading()
+
+
+def _remove_mac_connection(hass: HomeAssistant, entry: ConfigEntry, mac: str) -> None:
+    """Drop the one MAC connection this entry put on its device.
+
+    ``DeviceInfo.connections`` is merged into the device entry on every
+    setup, never replaced, so a cleared or changed MAC would otherwise stay
+    on the device, and keep the network-device link, forever.
+
+    Only that connection goes. The device can carry connections this entry
+    never registered: before HA 2026.8, a MAC that another integration
+    already knew merged both devices into one row shared by both config
+    entries, and those connections are not ours to remove.
+    """
+    dev_reg = dr.async_get(hass)
+    stale = (dr.CONNECTION_NETWORK_MAC, format_mac(mac))
+    for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        if stale in device.connections:
+            dev_reg.async_update_device(
+                device.id, new_connections=device.connections - {stale}
+            )

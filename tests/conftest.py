@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -28,6 +29,12 @@ FIXTURES = Path(__file__).parent / "fixtures"
 TEST_NODE_ID = "0123456789abcdef01234567"
 TEST_MAC = "aa:bb:cc:dd:ee:ff"
 TEST_TITLE = "Backyard"
+
+#: A connection this integration never registers. It stands in for one that
+#: another integration put on a device it shares with the entry: before HA
+#: 2026.8, registering a MAC that another integration already knew merged
+#: both into one device row.
+FOREIGN_CONNECTION = (dr.CONNECTION_NETWORK_MAC, "02:00:00:00:00:01")
 
 
 @pytest.fixture(autouse=True)
@@ -113,6 +120,23 @@ async def setup_integration(
     with patch_client(client):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
+
+
+def node_device(hass: HomeAssistant, entry: MockConfigEntry) -> dr.DeviceEntry:
+    """The entry's device row."""
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, TEST_NODE_ID), entry.entry_id
+    )
+    assert device is not None
+    return device
+
+
+def add_foreign_connection(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """Put :data:`FOREIGN_CONNECTION` on the entry's device."""
+    device = node_device(hass, entry)
+    dr.async_get(hass).async_update_device(
+        device.id, new_connections=device.connections | {FOREIGN_CONNECTION}
+    )
 
 
 @pytest.fixture
