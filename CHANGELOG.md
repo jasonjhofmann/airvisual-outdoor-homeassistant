@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow [SemVer](https://semver.org/) with a `v` prefix on tags.
 
+## [0.2.5] - 2026-10-20
+
+- **README: install from the HACS default repository.** The integration is
+  now listed in HACS (hacs/default#10316), so the install section leads with
+  searching for "AirVisual Outdoor" in HACS and keeps the custom repository
+  steps as a fallback. HACS shows the README from the latest release, which
+  is why this ships as a release. No integration code changes.
+
 ## [0.2.4] - 2026-10-20
 
 - **Setup wiped connections that other integrations had put on the
@@ -404,7 +412,8 @@ silent-failure paths and a config-flow UX defect.
   shape, rate limiting, error modes, transport quirks) plus the proposed
   integration shape and its open questions.
 
-[Unreleased]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.1...v0.2.2

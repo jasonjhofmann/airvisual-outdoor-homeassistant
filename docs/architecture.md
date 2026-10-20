@@ -316,6 +316,8 @@ integration got wrong before 0.2.1. Read these before touching
 4. ✅ Platinum climb: 100% test coverage, reconfigure tests, docs polish,
    README badges (dynamic shields.io), CHANGELOG discipline, release v0.1.0,
    live cutover (remove REST package → registry cleanup → add entries).
-5. Later/optional (OPEN): HACS default-registry PR; core-upstream conversation
-   (target: `airvisual` cloud integration gaining node-id entries, NOT
-   `airvisual_pro` — transport-split precedent).
+5. ✅ HACS default repository: listed via hacs/default#10316 (merged
+   2026-10-20, at v0.2.4).
+6. Later/optional (OPEN): core-upstream conversation (target: `airvisual`
+   cloud integration gaining node-id entries, NOT `airvisual_pro` —
+   transport-split precedent).

@@ -31,12 +31,16 @@ quality monitor, via IQAir's public per-device node API.
 
 ## Installation
 
-Until the HACS default-registry listing lands, install as a HACS custom
-repository:
+AirVisual Outdoor is in the HACS default repository:
+
+1. In HACS, search for "AirVisual Outdoor" and open it.
+2. Select **Download**, then restart Home Assistant.
+
+If the search does not find it, add it as a custom repository instead:
 
 1. HACS → ⋮ → *Custom repositories* → add this repo URL, category
    **Integration**.
-2. Install "AirVisual Outdoor", restart Home Assistant.
+2. Download "AirVisual Outdoor", then restart Home Assistant.
 
 Manual alternative: copy `custom_components/airvisual_outdoor/` into your
 config's `custom_components/` and restart.
