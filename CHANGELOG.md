@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow [SemVer](https://semver.org/) with a `v` prefix on tags.
 
+## [0.2.6] - 2026-10-20
+
+- **Statistics page path updated.** Home Assistant 2026.8 renamed Developer
+  tools to Tools (under Settings). The README and the reconfigure step's
+  help text now give both names.
+- **README troubleshooting for "no device with this node ID"** no longer
+  blames the id's format: a malformed id is rejected earlier with its own
+  message, so this error means IQAir does not serve a well-formed id.
+- No integration logic changes; the only code-side edit is that help text.
+
 ## [0.2.5] - 2026-10-20
 
 - **README: install from the HACS default repository.** The integration is
@@ -412,7 +422,8 @@ silent-failure paths and a config-flow UX defect.
   shape, rate limiting, error modes, transport quirks) plus the proposed
   integration shape and its open questions.
 
-[Unreleased]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/jasonjhofmann/airvisual-outdoor-homeassistant/compare/v0.2.2...v0.2.3
